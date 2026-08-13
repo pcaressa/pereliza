@@ -33,9 +33,9 @@ const rt = {
     data: [],       // All data defined by DATA statements.
     dp: -1,         // Data pointer to a line containing just data
     lines: [],      // The ordered list of all source (and code) line numbers.
-    lp: -1,         // Line pointer: during compilation indexes the item of lines
-                    //  under compilation, during execution indexes the item of
-                    //  lines under execution.
+    lp: -1,         // Line pointer: during compilation, rt.source[rt.lp] is the
+                    //  line under compiling; during execution,
+                    //  rt.code[rt.lines[rt.lp]] is the line under execution.
     name: "DEFAULT",// Current source program name.
     source: {},     // Current source program: line number keyed table.
     vars: {},       // Variables at runtime.
@@ -100,7 +100,7 @@ function TTY_Refresh(start) {
 }
 
 /// Read a text line, echoing its characters; return when Enter is pressed,
-//  the read line is stored into rt.in.
+///  the read line is stored into rt.in.
 async function TTY_Read() {
     rt.in = "";
     rt.cursor = 0;
@@ -176,7 +176,7 @@ async function CMD() {
 }}
 
 /// Execute each line of a text file as a command: if the line starts
-//  with a line number, it has the same effect as introduced interactively.
+/// with a line number, it has the same effect as introduced interactively.
 async function CMD_Load_File(file) {
     if (file) {
         if (!rt.saved && !confirm("OVERWRITE UNSAVED PROGRAM?")) {
@@ -208,15 +208,15 @@ async function CMD_BASIC(args) {
     rt.vars = {};
     rt.lines = Object.keys(rt.source).sort((a,b)=>(parseInt(a) < parseInt(b)));
     try {
-        for (rt.lp = 0; rt.lp < rt.lines.length; ++ rt.lp) {
+        for (rt.lp of rt.lines) {
             const tokens = BASIC_Parse();
             if (tokens[0].type === "keyword") tokens[0].token(tokens);  // tokens[0].token is a function!
             else throw "ILLEGAL INSTRUCTION IN";
         }
         if (rt.noend) throw "NO END INSTRUCTION";
     } catch (e) {
-        rt.error = e + " IN " + rt.lines[rt.lp];
-//        rt.out.push(e);
+        rt.error = e;
+        if (rt.lines[rt.lp]) rt.error += " IN " + rt.lines[rt.lp];
 }}
 
 async function CMD_BYE(args) {
@@ -278,7 +278,7 @@ async function CMD_EXEC(args) {
     rt.out.push("");
     if (rt.lines.length == 0) return;
     rt.stack = [];  // Return stack from GOSUBs
-    rt.lp = 0;      // Index of line number in lines to execute next.
+    rt.lp = 0;      // Index of line number in rt.lines to execute next.
     rt.dp = 0;      // Index of next DATA to be READ
     let t0 = new Date();
     try {
@@ -541,7 +541,7 @@ function BASIC_Subscript(tokens, t) {
     t = i.t;
     // Possible second index.
     if (tokens[t].type === ",") {
-        i = BASIC_Expression(line, tokens, t + 1);
+        i = BASIC_Expression(tokens, t + 1);
         if (i.type !== "number") throw "MISMATCHED STRING OPERATION";
         d2 = i.code;
         t = i.t;
@@ -610,7 +610,8 @@ function BASIC_Variable_Value(tokens, t) {
     return {type: type, t: t, code: code};
 }
 
-/// Peform a binary search inside rt.lines
+/// Peform a binary search inside rt.lines, returning the index in
+/// rt.lines of the source line number line.
 function BASIC_Line_Lookup(line) {
     // Bare binary search that JS still lacks.
     let start = 0, end = rt.lines.length - 1;
@@ -741,7 +742,7 @@ function BASIC_DIM(tokens) {
 }
 
 function BASIC_END(tokens) {
-    if (rt.lp != rt.lines.length - 1) throw "END IS NOT LAST";
+    if (rt.lp != rt.lines[rt.lines.length - 1]) throw "END IS NOT LAST";
     rt.noend = false;
     rt.code[rt.lp] = BASIC_Code("");
 }
@@ -761,8 +762,8 @@ function BASIC_END(tokens) {
 function BASIC_FOR(tokens) {
     // Scalar numerical variable expected at tokens[1].
     const name = tokens[1].token;
-    if (tokens[1].type !== "variable" || name.at(-1) === "$" || tokens[2].type !== "==")
-        throw "ILLEGAL FORMAT";
+    if (tokens[1].type !== "variable" || name.at(-1) === "$"
+    || tokens[2].type !== "==") throw "ILLEGAL FORMAT";
     let e = BASIC_Variable_Assign(tokens, 1);
     let code = e.code;
     e = BASIC_Expression(tokens, e.t + 1);  // +1 because we skip the "=".
@@ -771,12 +772,11 @@ function BASIC_FOR(tokens) {
     if (tokens[e.t].token !== "TO") throw "ILLEGAL FORMAT";
     e = BASIC_Expression(tokens, e.t + 1);
     if (e.type !== "number") throw "MISMATCHED STRING OPERATION";
-    code += `rt.vars.${name}.for=rt.lp;rt.vars.${name}.to=` + e.code
-        + `;rt.vars.${name}.step=1;`;
+    code += `const v=rt.vars.${name};v.for=rt.lp;v.to=${e.code};v.step=1;`;
     if (tokens[e.t].token === "STEP") {
         e = BASIC_Expression(tokens, e.t + 1);
         if (e.type !== "number") throw "MISMATCHED STRING OPERATION";
-        code += `rt.vars.${name}.step=` + e.code + ";";
+        code += `v.step=${e.code};`;
     }
     if (tokens[e.t].type !== "eol") throw "ILLEGAL FORMAT";
     // If the next condition is violated the FOR loop is not executed,
@@ -784,7 +784,7 @@ function BASIC_FOR(tokens) {
     // to it at runtime.
     let index = BASIC_Line_Lookup(rt.lp) + 1;
     const next_i = new RegExp(`^NEXT\\s+${name}$`);
-    while (index < rt.lines.length && !rt.source[index].match(next_i)) {
+    while (index < rt.lines.length && !rt.source[rt.lines[index]].match(next_i)) {
         ++ index;
     }
     if (index == rt.lines.length) throw "FOR WITHOUT NEXT";
