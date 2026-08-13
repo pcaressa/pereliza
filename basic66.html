@@ -1,51 +1,4 @@
 <!DOCTYPE html>
-
-<!--
-    This html page implements a simple Basic interpreter for a subset of
-    the Dartmouth BASIC as of 1967, and as described in the manual
-    https://www.bitsavers.org/pdf/dartmouth/dtss/196801_BASIC_4th_Edition.pdf
-    
-    However, in this first (and probably last) version of the interpreter,
-    advanced features are omitted, viz. there are no MAT instructions.
-    Strings are allowed, but string processing is done by converting them
-    to vectors of ascii codes by CHANGE, to handle vectors and convert them
-    back to strings via CHANGE the other way.
-
-    The purpose is to provide an easy to use and portable enrivonments for
-    silly retro-projects, such as the recreation of the Eliza chatbot.
-
-    The language implementes is as simple as possible (but not simpler).
-
-    Statements are preceded by a line number and can be one of:
-
-    LIMITATIONS
-
-    This is an interpreter, the code is compiled in an inner form, very inefficient,
-    and then executed line by line.
-
-    The source code is contained in an object rt.code whose keys are line numbers
-    and whose values are line texts. The object code is JS code wrapped inside
-    an asynchronous function built with
-    Object.getPrototypeOf(async function(){}).constructor
-    
-    The program execution is just the execution of these functions: they are
-    stored in an object that has the same keys (line numbers) of the source
-    program. A runtime variable rt.lines contains the ordered list of all lines,
-    while rt.ip points to the item in rt.lines corresponding to the next line
-    to execute.
-    
-    During execution, variables are stored in a table "rt.vars" whose keys are names
-    and whose values are objects: {d1: ..., d2: ..., value: ...} where d1 and d2 are
-    unsigned integers, denoting the dimensions of the vectror or matrix which is
-    encoded in the variable, or both d1 and d2 are 0 if the variable is a scalar
-    one. In any case, value is an array with (1 + d1)(1 + d2) elements (indeed a
-    matrix has always a 0-th row and a 0-th column). Supplementary keys can be
-    for: line_number, to: number, step: number, which are used to contain
-    additional data for variables controlled by a FOR loop.
-    
-    The rt.data array contains all constants read from DATA statements.
--->
-
 <html>
 
 <head>
@@ -53,7 +6,7 @@
     <style>
         body {
             background: #000; color: #0f0; font-family: monospace; padding: 20px;
-            font-size: 18px; display: flex; align-items: center;
+            font-size: 18px; display: flex; align-items: center; white-space: pre;
         }
     </style>
 </head>
@@ -90,10 +43,11 @@ const rt = {
 document.addEventListener('DOMContentLoaded', async () => {
     rt.out.push("BASIC66 - A DARTMOUTH BASIC DIALECT");
     rt.out.push("(C) 2026 BY PAOLO CARESSA");
-    rt.out.push("");
+    rt.out.push("TERMINAL 1 ON AT " + new Date().toDateString())
+    rt.out.push("READY");
     while (rt.active) {
-        await TTY_Read(rt)
-        await CMD(rt);
+        await TTY_Read()
+        await CMD();
         if (rt.error) rt.out.push(rt.error);
     }
 });
@@ -109,7 +63,7 @@ TERM.addEventListener('drop', e => {
     e.preventDefault();
     TERM.classList.remove('dragover');
     const file = e.dataTransfer.files[0]
-    CMD_Load_File(rt, file);
+    CMD_Load_File(file);
 });
 TERM.focus();
 
@@ -145,17 +99,21 @@ function TTY_Refresh(start) {
 
 /// Read a text line, echoing its characters; return when Enter is pressed,
 //  the read line is stored into rt.in.
-async function TTY_Read(rt) {
+async function TTY_Read() {
     rt.in = "";
     rt.cursor = 0;
+    let start = rt.out.length - rt.height;
+    if (start < 0) start = 0;
     for (;;) {
-        TTY_Refresh();
+        TTY_Refresh(start);
         const key = await TTY_Key();
         //console.log(key);
         switch (key) {
             case "Enter":
                 rt.out.push(rt.prompt + rt.in);
                 return;
+            case "ArrowUp": if (start > 1) -- start; continue;
+            case "ArrowDown": if (start < rt.out.length - rt.height) ++ start; continue;
             case "ArrowLeft": if (rt.cursor > 0) --rt.cursor; continue;
             case "ArrowRight": if (rt.cursor < rt.in.length) ++rt.cursor; continue;
             case "Backspace":
@@ -189,7 +147,7 @@ const CMD_Commands = {
 };
 
 /// Parse and execute a system command from rt.in.
-async function CMD(rt) {
+async function CMD() {
 // console.trace("La funzione è stata eseguita da qui:");
     rt.error = "OK";
     let text = rt.in.match(/^\s*(\d*)\s*(.*)\s*$/);
@@ -211,7 +169,7 @@ async function CMD(rt) {
         return;
     }
     if (text) {    // Command
-        if (CMD_Commands[text[1]]) await CMD_Commands[text[1]](rt, text[2]);
+        if (CMD_Commands[text[1]]) await CMD_Commands[text[1]](text[2]);
         else rt.error = "ILLEGAL COMMAND";
     } else {    // Empty line
         rt.error = null;
@@ -219,7 +177,7 @@ async function CMD(rt) {
 
 /// Execute each line of a text file as a command: if the line starts
 //  with a line number, it has the same effect as introduced interactively.
-async function CMD_Load_File(rt, file) {
+async function CMD_Load_File(file) {
     if (file) {
         if (!rt.saved && !confirm("OVERWRITE UNSAVED PROGRAM?")) {
             rt.out.push(`FILE ${file.name} NOT LOADED`);
@@ -232,7 +190,7 @@ async function CMD_Load_File(rt, file) {
                 rt.in = "";
                 for (let j = 0; j < t.length; ++j)
                     rt.in += TTY_Char(t[j]);
-                await CMD(rt);
+                await CMD();
             }
             rt.in = rtin;
             rt.name = file.name;
@@ -242,7 +200,7 @@ async function CMD_Load_File(rt, file) {
         TTY_Refresh();
 }}
 
-async function CMD_BASIC(rt, args) {
+async function CMD_BASIC(args) {
     rt.vars = {};
     rt.code = {};
     rt.data = [];
@@ -252,10 +210,10 @@ async function CMD_BASIC(rt, args) {
         // Creates the ordered list of all source program's lines.
         rt.lines = Object.keys(rt.source).sort((a,b)=>(parseInt(a) < parseInt(b)));
         for (const line of rt.lines) {
-            const tokens = BASIC_Parse(rt, line);
+            const tokens = BASIC_Parse(line);
             if (tokens[0].type === "keyword")
-                tokens[0].token(rt, line, tokens);
-            else throw `ILLEGAL INSTRUCTION AT ${line}`;
+                tokens[0].token(line, tokens);
+            else throw `ILLEGAL INSTRUCTION IN ${line}`;
         }
         if (rt.noend) throw `PROGRAM HAS NO END STATEMENT`;
     } catch (e) {
@@ -263,11 +221,16 @@ async function CMD_BASIC(rt, args) {
 //        rt.out.push(e);
 }}
 
-async function CMD_BYE(rt, args) { rt.active = false; rt.error = "GOODBYE"; }
+async function CMD_BYE(args) {
+    rt.out.push("GOODBYE");
+    rt.out.push("*** OFF AT " + new Date().toDateString());
+    TTY_Refresh();
+    rt.active = false;
+}
 
 /// Parse from args a pair first-last, where both first and last are optional:
 /// if first is omitted then it is 0, if last is omitted then it is rt.lines.length.
-async function CMD_Parse_first_last(rt, list, args) {
+async function CMD_Parse_first_last(list, args) {
     rt.lines = Object.keys(list).sort((a,b)=>(parseInt(a) < parseInt(b)));
     let first = 0;
     let last = rt.lines.length - 1;
@@ -289,7 +252,7 @@ async function CMD_Parse_first_last(rt, list, args) {
 
 /// List from the first to the last lines the list object: it assumes that
 //  rt.lines contains the sorted list of all lines of the list argument.
-async function CMD_Listing(rt, list, first, last) {
+async function CMD_Listing(list, first, last) {
     let start = rt.out.length;
     while (first <= last) {
         // Prints a first chunk of the program on the screen
@@ -304,17 +267,23 @@ async function CMD_Listing(rt, list, first, last) {
     TTY_Refresh(start);
 }
 
-async function CMD_CODE(rt, args) {
-    const pair = await CMD_Parse_first_last(rt, rt.code, args);
+async function CMD_CODE(args) {
+    const pair = await CMD_Parse_first_last(rt.code, args);
+    rt.out.push("");
     rt.out.push(`CODE ${rt.name}`);
-    await CMD_Listing(rt, rt.code, pair.first, pair.last);
+    rt.out.push("");
+    await CMD_Listing(rt.code, pair.first, pair.last);
 }
 
-async function CMD_EXEC(rt, args) {
+async function CMD_EXEC(args) {
+    rt.out.push("");
+    rt.out.push(rt.name);
+    rt.out.push("");
     if (rt.lines.length == 0) return;
     rt.stack = [];  // Return stack from GOSUBs
     rt.ip = 0;      // Index of line number in lines to execute next.
     rt.dp = 0;      // Index of next DATA to be READ
+    let t0 = new Date();
     try {
         do {
             ++ rt.ip;   // this could be altered by the evaluation below (eg GOTOs) 
@@ -324,24 +293,29 @@ console.log(`EXEC[${rt.lines[rt.ip - 1]}]`, rt.code[rt.lines[rt.ip - 1]]);
         } while (rt.ip < rt.lines.length);
     } catch (e) {
         rt.error = e;
-}}
-
-async function CMD_LIST(rt, args) {
-    const pair = await CMD_Parse_first_last(rt, rt.source, args);
-    rt.out.push(`PROGRAM ${rt.name}`);
-    await CMD_Listing(rt, rt.source, pair.first, pair.last);
+    }
+    rt.out.push("");
+    rt.out.push(`TIME:  ${Math.floor((new Date() - t0)/1000)} SECS.`);
 }
 
-async function CMD_MERGE(rt, args) {
+async function CMD_LIST(args) {
+    const pair = await CMD_Parse_first_last(rt.source, args);
+    rt.out.push("");
+    rt.out.push(`PROGRAM ${rt.name}`);
+    rt.out.push("");
+    await CMD_Listing(rt.source, pair.first, pair.last);
+}
+
+async function CMD_MERGE(args) {
     // Create a fake input button and click on it.
     const input = document.createElement('input');
     input.type = "file";
     input.accept = ".BAS";
-    input.onchange = async (event) => { CMD_Load_File(rt, event.target.files[0]); };
+    input.onchange = async (event) => { CMD_Load_File(event.target.files[0]); };
     input.click();
 }
 
-async function CMD_NEW(rt, args) {
+async function CMD_NEW(args) {
     if (!args || args === "") rt.error = "FILE NAME MISSING";
     else if (!rt.saved && !confirm("ERASE CURRENT PROGRAM?")) {
         rt.error = "COMMAND ABORTED";
@@ -351,22 +325,22 @@ async function CMD_NEW(rt, args) {
         rt.saved = true;
 }}
 
-async function CMD_OLD(rt, args) {
+async function CMD_OLD(args) {
     if (!rt.saved && !confirm("ERASE CURRENT PROGRAM?")) {
         rt.error = "COMMAND ABORTED";
     } else {
         rt.name = (args.length > 8 ? args.slice(0, 8) : args) + ".BAS";
         rt.source = {};
         rt.saved = true;
-        CMD_MERGE(rt, args);
+        CMD_MERGE(args);
 }}
 
-async function CMD_RUN(rt, args) {
-    await CMD_BASIC(rt);
-    if (rt.error === "OK") await CMD_EXEC(rt);
+async function CMD_RUN(args) {
+    await CMD_BASIC(args);
+    if (rt.error === "OK") await CMD_EXEC(args);
 }
 
-async function CMD_SAVE(rt, args) {
+async function CMD_SAVE(args) {
     if (rt.saved) {
         rt.out.push(`FILE ${rt.name} ALREADY SAVED`);
         return;
@@ -384,7 +358,7 @@ async function CMD_SAVE(rt, args) {
     rt.saved = true;
 }
 
-async function CMD_VARS(rt, args) {
+async function CMD_VARS(args) {
     const names = Object.keys(rt.vars).sort();
     let start = rt.out.length;
     for (let i = 0; i < names.length; /* inside for loop */) {
@@ -408,10 +382,10 @@ async function CMD_VARS(rt, args) {
 
 const BASIC_Keywords =  {
     CHANGE: BASIC_CHANGE, DATA: BASIC_DATA, DIM: BASIC_DIM, END: BASIC_END,
-    FOR: BASIC_FOR, GOSUB: BASIC_GOSUB, GOTO: BASIC_GOTO, IF: BASIC_IF,
-    INPUT: BASIC_INPUT, LET: BASIC_LET, NEXT: BASIC_NEXT, PRINT: BASIC_PRINT,
-    READ: BASIC_READ, REM: BASIC_REM, RESTORE: BASIC_RESTORE, RETURN: BASIC_RETURN,
-    STOP: BASIC_STOP
+    FOR: BASIC_FOR, GO: BASIC_GO, GOSUB: BASIC_GOSUB, GOTO: BASIC_GOTO,
+    IF: BASIC_IF, INPUT: BASIC_INPUT, LET: BASIC_LET, MAT: BASIC_MAT,
+    NEXT: BASIC_NEXT, ON: BASIC_ON, PRINT: BASIC_PRINT, READ: BASIC_READ,
+    REM: BASIC_REM, RESTORE: BASIC_RESTORE, RETURN: BASIC_RETURN, STOP: BASIC_STOP
 };
 
 const BASIC_Functions = {
@@ -426,7 +400,7 @@ const BASIC_Functions = {
  * "string", "keyword", "variable" or in case of delimiter the delimiter
  *  itself. Values are numbers, strings, functions, strings (key to rt.vars).
  *  The last token of the list is always {type:"eol", token:null}. */
-function BASIC_Parse(rt, line) {
+function BASIC_Parse(line) {
     let s = rt.source[line];
     const isalpha = (c) => (c >= "a" && c <= "z" || c >= "A" && c <= "Z");
     const isalnum = (c) => (isalpha(c) || c >= "0" && c <= "9");
@@ -434,15 +408,21 @@ function BASIC_Parse(rt, line) {
     s = s + " ";   // useful when to check the last character of s.
     let i = 0;
     while (i < s.length) {
-        // Check against non printable ASCII characters.
-        if (s[i] < " " || s[i] > "~") throw `ILLEGAL CHARACTER AT ${line}`;
-        if (s[i] === " ") {         // Ignore blanks.
+        if (s[i] < " " || s[i] > "~") throw `ILLEGAL CHARACTER IN ${line}`;
+        // Check against a number in the first place.
+        const r = /[+-]?\d+(?:\.\d+)?/y;
+        r.lastIndex = i;
+        const match = r.exec(s);
+        if (match) {
+            tokens.push({ type: "number", token: Number(match[0]) });
+            i = r.lastIndex;
+        } else if (s[i] === " ") {         // Ignore blanks.
             ++i;
         } else if (s[i] === "'") {  // Comment until the end of line
             break;
         } else if (s[i] === '"') {  // String
             let j = s.indexOf('"', i + 1);
-            if (j < 0) throw `UNTERMINATED STRING AT ${line}`;
+            if (j < 0) throw `UNTERMINATED STRING IN ${line}`;
             tokens.push({type: "string", token: s.slice(i + 1, j)});
             i = j + 1;
         } else if (isalpha(s[i])) { // Identifier
@@ -468,20 +448,10 @@ function BASIC_Parse(rt, line) {
         } else if (s[i] === "=") {
             tokens.push({type: "==", token: "="});
             ++ i;
-        } else if (s[i] < '0' || s[i] > '9') {  // Delimiter?
+        } else {  // Delimiter!
             tokens.push({type: s[i], token: s[i]});
             ++i;
-        } else {
-            // If all else fails, it's a number: try to parse it.
-            const r = /[+-]?\d+(?:\.\d+)?/y;
-            r.lastIndex = i;
-            const match = r.exec(s);
-            if (match) {
-                tokens.push({ type: "number", token: Number(match[0]) });
-                i = r.lastIndex;
-            } else {
-                throw `ILLEGAL CONSTANT ${s.slice(i)} AT ${line}`;
-    }}}
+    }}
     tokens.push({ type: "eol", token: null });
     return tokens;
 }
@@ -490,12 +460,12 @@ function BASIC_Parse(rt, line) {
 //  {type:..., code: ..., t: ...} where type is "number" or "string", code is the
 //  string compiling the expression and t is the first token in tokens after the
 //  expression.
-function BASIC_Expression(rt, line, tokens, t) {
+function BASIC_Expression(line, tokens, t) {
     let code = "";
     let type = null;
     for (;;) {
-        const opd = BASIC_Operand(rt, line, tokens, t);
-        if (type) { if (type != opd.type) throw `TYPE MISMATCH AT ${line}`; }
+        const opd = BASIC_Operand(line, tokens, t);
+        if (type) { if (type != opd.type) throw `TYPE MISMATCH IN ${line}`; }
         else type = opd.type;
         code += opd.code;
         t = opd.t;
@@ -504,7 +474,7 @@ function BASIC_Expression(rt, line, tokens, t) {
             code += "**";
         } else {
             if ("+-*/".indexOf(tokens[t].type) < 0) return {type: type, code: code, t: t};
-            if (type !== "number") throw `OPERATOR MISMATCH AT ${line}`;
+            if (type !== "number") throw `OPERATOR MISMATCH IN ${line}`;
             code += tokens[t].type;
         }
         ++t;
@@ -514,7 +484,7 @@ function BASIC_Expression(rt, line, tokens, t) {
 //  t: ...} where type is "string" or "number", code is the compiled code of
 //  the operand and t is the index of the next token in tokens. On error,
 //  an exception it thrown.
-function BASIC_Operand(rt, line, tokens, t) {
+function BASIC_Operand(line, tokens, t) {
     let code = "";
     let type = null;
     for (;;) {
@@ -526,28 +496,28 @@ function BASIC_Operand(rt, line, tokens, t) {
             case "number":
                 return {type: "number", code: code + "" + tokens[t].token, t: t + 1};
             case "-":
-                if (type === "string") throw `ILLEGAL STRING OPERATOR AT ${line}`;
+                if (type === "string") throw `ILLEGAL STRING OPERATOR IN ${line}`;
                 code += "-";
                 ++t;
                 continue;
             case "(":
-                let e = BASIC_Expression(rt, line, tokens, t + 1);
-                if (tokens[e.t].type !== ")") throw `")" EXPECTED AT ${line}`;
+                let e = BASIC_Expression(line, tokens, t + 1);
+                if (tokens[e.t].type !== ")") throw `")" EXPECTED IN ${line}`;
                 e.code = code + "(" + e.code + ")";
                 ++ e.t; // slip the ')'
                 return e;
             case "variable":
-                let v = BASIC_Variable_Value(rt, line, tokens, t);
+                let v = BASIC_Variable_Value(line, tokens, t);
                 v.code = code + v.code;
                 return v;
             case "function":
-                return tokens[t].token(rt, line, tokens, t + 1);
+                return tokens[t].token(line, tokens, t + 1);
         }
-        throw `ILLEGAL EXPRESSION AT ${line}`;
+        throw `ILLEGAL EXPRESSION IN ${line}`;
 }}
 
-function BASIC_Comparison(rt, line, tokens, t) {
-    const e1 = BASIC_Expression(rt, line, tokens, t);
+function BASIC_Comparison(line, tokens, t) {
+    const e1 = BASIC_Expression(line, tokens, t);
     const type = e1.type;
     let code = e1.code;
     t = e1.t;
@@ -556,9 +526,9 @@ function BASIC_Comparison(rt, line, tokens, t) {
     || toktype === ">=" || toktype === "==") {
         code += toktype;
         ++ t;
-    } else throw `RELATION EXPECTED AT ${line}`;
-    const e2 = BASIC_Expression(rt, line, tokens, t);
-    if (type !== e2.type) throw `TYPE MISMATCH AT ${line}`;
+    } else throw `COMPARISON EXPECTED IN ${line}`;
+    const e2 = BASIC_Expression(line, tokens, t);
+    if (type !== e2.type) throw `TYPE MISMATCH IN ${line}`;
     code += e2.code;
     return {code: code, t: e2.t};
 }
@@ -566,32 +536,31 @@ function BASIC_Comparison(rt, line, tokens, t) {
 /// Compile a single or pair of subscript indexes: it returns an object
 //  {d1: ..., d2: ..., t: ...} where d1 and d2 contains the code compiling the
 //  indexes and t the index in tokens of the first token following the subscript.
-function BASIC_Subscript(rt, line, tokens, t) {
+function BASIC_Subscript(line, tokens, t) {
     // First index.
-    let i = BASIC_Expression(rt, line, tokens, t + 1);
-    if (i.type !== "number") throw `INVALID INDEX AT ${line}`;
+    let i = BASIC_Expression(line, tokens, t + 1);
+    if (i.type !== "number") throw `INVALID INDEX IN ${line}`;
     let d1 = i.code;
     let d2 = "0";
     t = i.t;
     // Possible second index.
     if (tokens[t].type === ",") {
-        i = BASIC_Expression(rt, line, tokens, t + 1);
-        if (i.type !== "number") throw `INVALID INDEX AT ${line}`;
+        i = BASIC_Expression(line, tokens, t + 1);
+        if (i.type !== "number") throw `INVALID INDEX IN ${line}`;
         d2 = i.code;
         t = i.t;
     }
-    if (tokens[t].type !== ")") throw `SYNTAX ERROR: MISSING ")" AT ${line}`;
+    if (tokens[t].type !== ")") throw `SYNTAX ERROR: MISSING ")" IN ${line}`;
     ++ t;   // skip the closing ")".
     return {d1: d1, d2: d2, t: t};
 }
 
 /// Insert a new variable in the rt.vars symbol table, with given initial value.
-function BASIC_Variable_Insert(rt, v, init, d1, d2) {
-    if (d1 === "0") {       // Scalar variable
+function BASIC_Variable_Insert(v, init, d1 = 0, d2 = 0) {
+    if (d1 === 0) {       // Scalar variable
         rt.vars[v] = {value: init};
     } else {                // Array variable
-        rt.vars[v] = {d1: 10, d2: d2 === "0" ? 0 : 10};
-        rt.vars[v].value = new Array((rt.vars[v].d1 + 1)*(rt.vars[v].d2 + 1)).fill(init);
+        rt.vars[v] = {d1: d1, d2: d2, value: new Array((d1 + 1)*(d2 + 1)).fill(init)};
     }
 }
 
@@ -600,23 +569,21 @@ function BASIC_Variable_Insert(rt, v, init, d1, d2) {
 //  or "string", code is the string compiling the variable reference and t is the
 //  first token in tokens after the expression. The returned code has the form
 //  "... =" and must be completed with the RHS of the assignment.
-function BASIC_Variable_Assign(rt, line, tokens, t) {
-    if (tokens[t].type !== "variable") throw `VARIABLE EXPECTED AT ${line}`;
+function BASIC_Variable_Assign(line, tokens, t) {
+    if (tokens[t].type !== "variable") throw `VARIABLE EXPECTED IN ${line}`;
     let v = tokens[t].token;
     const type = v.at(-1) === "$" ? "string" : "number";
     const init = type === "number" ? "0" : "''";
-    let d1 = "0", d2 = "0";
     if (tokens[++t].type !== "(") { // Scalar variable
         code = `rt.vars.${v}.value=`;
+        if (!rt.vars[v]) BASIC_Variable_Insert(v, init);
     } else {                        // Array variable
         v += "@";                   // suffix in rt.vars for array variables
-        let i = BASIC_Subscript(rt, line, tokens, t);
-        d1 = i.d1;
-        d2 = i.d2;
+        let i = BASIC_Subscript(line, tokens, t);
+        code = `const offset=${i.d1}+${i.d2}*rt.vars["${v}"].d1;if(rt.vars["${v}"].value[offset]===undefined)throw "SUBSCRIPT OUT OF RANGE IN ${line}";rt.vars["${v}"].value[offset]=`;
+        if (!rt.vars[v]) BASIC_Variable_Insert(v, init, 10, i.d2 === "0" ? 0 : 10);
         t = i.t;
-        code = `const offset=${i.d1}+${i.d2}*rt.vars["${v}"].d1;if(rt.vars["${v}"].value[offset]===undefined)throw "SUBSCRIPT OUT OF RANGE AT ${line}";rt.vars["${v}"].value[offset]=`;
     }
-    if (!rt.vars[v]) BASIC_Variable_Insert(rt, v, init, d1, d2);
     return {type: type, code: code, t: t};
 }
 
@@ -627,30 +594,28 @@ function BASIC_Variable_Assign(rt, line, tokens, t) {
 //  the variable's value. Notice that variables not mentioned so far are inserted
 //  in the symbol table rt.vars at compile time, with the default value 0 for
 //  numerical variables, "" for string variables.
-function BASIC_Variable_Value(rt, line, tokens, t) {
+function BASIC_Variable_Value(line, tokens, t) {
     let v = tokens[t].token;
     const type = v.at(-1) === "$" ? "string" : "number";
-    const init = type === "number" ? "0" : "''";
-    let d1 = "0", d2 = "0";
+    const init = type === "number" ? 0 : "";
     if (tokens[++t].type !== "(") { // Scalar variable
         // Compile the code that compute the values of the variable at.
         code = `(rt.vars.${v}.value)`;
+        if (!rt.vars[v]) BASIC_Variable_Insert(v, init);
     } else {                        // Array variable
         v += "@";                   // suffix in rt.vars for array variables
-        let i = BASIC_Subscript(rt, line, tokens, t);
-        d1 = i.d1;
-        d2 = i.d2;
-        t = i.t;
+        let i = BASIC_Subscript(line, tokens, t);
         // Compile the code that compute the values of a function at runtime:
         //  it is a JS function returning the value or throwing an exception.
-        code = `(()=>{const offset=${i.d1}+${i.d2}*rt.vars["${v}"].d1;if(!rt.vars["${v}"].value[offset])throw"SUBSCRIPT OUT OF RANGE AT ${line}";return rt.vars["${v}"].value[offset];})()`;
+        code = `(()=>{const offset=${i.d1}+${i.d2}*rt.vars["${v}"].d1;if(!rt.vars["${v}"].value[offset])throw"SUBSCRIPT OUT OF RANGE IN ${line}";return rt.vars["${v}"].value[offset];})()`;
+        if (!rt.vars[v]) BASIC_Variable_Insert(v, init, 10, d2 === "0" ? 0 : 10);
+        t = i.t;
     }
-    if (!rt.vars[v]) BASIC_Variable_Insert(rt, v, init, d1, d2);
     return {type: type, t: t, code: code};
 }
 
 /// Peform a binary search inside rt.lines
-function BASIC_Line_Lookup(rt, line) {
+function BASIC_Line_Lookup(line) {
     // Bare binary search that JS still lacks.
     let start = 0, end = rt.lines.length - 1;
     while (start <= end) {
@@ -673,7 +638,7 @@ function BASIC_Line_Lookup(rt, line) {
 
     The prototype of each compiling function is
 
-        BASIC_KEYWORD(rt, line, tokens)
+        BASIC_KEYWORD(line, tokens)
     
     where rt is the runtime, line the line number of the line under
     compiling and tokens the list of tokens of the source code.
@@ -688,12 +653,12 @@ const BASIC_Code = Object.getPrototypeOf(async function(){}).constructor;
 /// Runtime function that changes a string into a vector: the 0-th item of
 /// the vector contains the string length.
 async function BASIC_RT_CHANGE(from, to) {
-    if (!rt.vars[from]) throw `VARIABLE ${from} DOES NOT EXISTS AT ${rt.lines[rt.ip-1]}`;
-    if (from.at(-1) === "@") throw `CANNOT CHANGE FROM A STRING ARRAY AT ${rt.lines[rt.ip-1]}`;
-    if (!rt.vars[to]) throw `VARIABLE ${to} DOES NOT EXISTS AT ${rt.lines[rt.ip-1]}`;
-    //if (rt.vars[from].d1 > 0) throw `CANNOT CHANGE FROM A STRING ARRAY AT ${rt.lines[rt.ip-1]}`;
+    if (!rt.vars[from]) throw `VARIABLE ${from} DOES NOT EXISTS IN ${rt.lines[rt.ip-1]}`;
+    if (from.at(-1) === "@") throw `CANNOT CHANGE FROM A STRING ARRAY IN ${rt.lines[rt.ip-1]}`;
+    if (!rt.vars[to]) throw `VARIABLE ${to} DOES NOT EXISTS IN ${rt.lines[rt.ip-1]}`;
+    //if (rt.vars[from].d1 > 0) throw `CANNOT CHANGE FROM A STRING ARRAY IN ${rt.lines[rt.ip-1]}`;
     const vfrom = rt.vars[from].value, vto = rt.vars[to].value;
-    if (vto.d1 < vfrom.length) throw `DESTINATION ARRAY TOO SMALL AT ${rt.lines[rt.ip-1]}`;
+    if (vto.d1 < vfrom.length) throw `DESTINATION ARRAY TOO SMALL IN ${rt.lines[rt.ip-1]}`;
     // Ok, we can perform the copy
     vto[0] = vfrom.length;
     for (let i = 0; i < vfrom.length; ++ i)
@@ -703,10 +668,10 @@ async function BASIC_RT_CHANGE(from, to) {
 /// Runtime function that changes a vector into a string: the 0-th item of
 /// the vector contains the string length.
 async function BASIC_RT_CHANGE$(from, to) {
-    if (to.at(-1) === "@") throw `CANNOT CHANGE TO A STRING ARRAY AT ${rt.lines[rt.ip-1]}`;
-    if (!rt.vars[from]) throw `VARIABLE ${from} DOES NOT EXISTS AT ${rt.lines[rt.ip-1]}`;
+    if (to.at(-1) === "@") throw `CANNOT CHANGE TO A STRING ARRAY IN ${rt.lines[rt.ip-1]}`;
+    if (!rt.vars[from]) throw `VARIABLE ${from} DOES NOT EXISTS IN ${rt.lines[rt.ip-1]}`;
     if (!rt.vars[to]) rt.vars[to] = {};
-    //if (rt.vars[to].d1 > 0) throw `CANNOT CHANGE TO A STRING ARRAY AT ${rt.lines[rt.ip-1]}`;
+    //if (rt.vars[to].d1 > 0) throw `CANNOT CHANGE TO A STRING ARRAY IN ${rt.lines[rt.ip-1]}`;
     const vfrom = rt.vars[from].value, vto = rt.vars[to];
     // Ok, we can perform the copy
     vto.value = "";
@@ -724,14 +689,14 @@ async function BASIC_RT_CHANGE$(from, to) {
     In the second form, the vector X(), which should exist and have at least as
     much items as the number X(0) is, is converted to a string, which is created
     or overwritten.     */
-function BASIC_CHANGE(rt, line, tokens) {
+function BASIC_CHANGE(line, tokens) {
     if (tokens[1].type !== "variable" || tokens[2].token !== "TO" || tokens[3].type !== "variable")
-        throw `SYNTAX ERROR AT ${line}`;
+        throw `SYNTAX ERROR IN ${line}`;
     let from = tokens[1].token;
     let to = tokens[3].token;
     const from_type = from.at(-1) === "$" ? "string" : "number";
     const to_type = to.at(-1) === "$" ? "string" : "number";
-    if (from_type === to_type) throw `CANNOT CHANGE FROM VARIABLE OF SAME TYPE AT ${line}`;
+    if (from_type === to_type) throw `CANNOT CHANGE FROM VARIABLE OF SAME TYPE IN ${line}`;
     // The non string variable should be a vector
     if (from_type === "string") to += "@"; else from += "@";
     rt.code[line] = BASIC_Code("await "
@@ -741,200 +706,264 @@ function BASIC_CHANGE(rt, line, tokens) {
 
 /// This does not compile code, but parse constants that are stored
 //  in the rt.ddata array.
-function BASIC_DATA(rt, line, tokens) {
+function BASIC_DATA(line, tokens) {
     let t = 1;
     for (;;) {
         if (tokens[t].type !== "number" && tokens[t].type !== "string")
-            throw `ILLEGAL CONSTANT AT ${line}`;
+            throw `ILLEGAL CONSTANT IN ${line}`;
         rt.data.push(tokens[t].token);
         ++t;
         if (tokens[t].type === "eol") break;
-        if (tokens[t].type !== ",") throw `ILLEGAL STATEMENT AT ${line}`;
+        if (tokens[t].type !== ",") throw `ILLEGAL STATEMENT IN ${line}`;
         ++t;   // Skip the comma
     }
     rt.code[line] = BASIC_Code(""); // void function, the line ought to exists since it could be targeted by a GOTO.
 }
 
-function BASIC_DIM(rt, line, tokens) {
+function BASIC_DIM(line, tokens) {
     let t = 0;
     let code = "";
     do {
-        if (tokens[++t].type !== "variable") throw `SYNTAX ERROR AT ${line}`;
+        if (tokens[++t].type !== "variable") throw `SYNTAX ERROR IN ${line}`;
         const v = tokens[t].token + "@";
-        if (rt.vars[v]) throw `ARRAY ${tokens[t].token} ALREADY DIMENSIONED AT ${line}`;
+        if (rt.vars[v]) throw `ARRAY ${tokens[t].token} ALREADY DIMENSIONED IN ${line}`;
         const init = v.at(-2) === "$" ? "" : 0;
         // Subscript indexes must be numerical constants.
-        if (tokens[++t].type !== "(") throw `"(" EXPECTED AT ${line}`;
-        if (tokens[++t].type !== "number") throw `NUMERICAL CONSTANT EXPECTED AS ARRAY DIMENSION AT ${line}`;
+        if (tokens[++t].type !== "(") throw `"(" EXPECTED IN ${line}`;
+        if (tokens[++t].type !== "number") throw `NUMERICAL CONSTANT EXPECTED AS ARRAY DIMENSION IN ${line}`;
         let d1 = tokens[t].token;
         let d2 = 0;
         if (tokens[++t].type === ",") {
-            if (tokens[++t].type !== "number") throw `NUMERICAL CONSTANT EXPECTED AS ARRAY DIMENSION AT ${line}`;
+            if (tokens[++t].type !== "number") throw `NUMERICAL CONSTANT EXPECTED AS ARRAY DIMENSION IN ${line}`;
             d2 = tokens[t].token;
             ++ t;
         }
-        if (tokens[t].type !== ")") throw `")" EXPECTED AT ${line}`;
-        if (d1 < 1) throw `INVALID VARIABLE DIMENSIONING AT ${line}`;
-        BASIC_Variable_Insert(rt, v, 0, d1, d2);
+        if (tokens[t].type !== ")") throw `")" EXPECTED IN ${line}`;
+        if (d1 < 1) throw `INVALID VARIABLE DIMENSIONING IN ${line}`;
+        BASIC_Variable_Insert(v, 0, d1, d2);
     } while (tokens[++t].type === ",");
-    if (tokens[t].type !== "eol") throw `SYNTAX ERROR AT ${line}`;
+    if (tokens[t].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
     rt.code[line] = BASIC_Code("");
 }
 
-function BASIC_END(rt, line, tokens) {
-    if (line != rt.lines[rt.lines.length - 1]) throw `END IS NOT THE LAST PROGRAM STATEMENT AT ${line}`;
-    BASIC_STOP(rt, line, tokens);
+function BASIC_END(line, tokens) {
+    if (line != rt.lines[rt.lines.length - 1]) throw `END IS NOT THE LAST PROGRAM STATEMENT IN ${line}`;
+    BASIC_STOP(line, tokens);
     rt.noend = false;
 }
 
 /// FOR compiles an assignment which adds some more keys in the rt.vars.V object
 //  encoding the assigned variable V, namely a for:ip key whose value is the ip to
 //  assing to rt.ip to iterate the loop, the to value and the step.
-function BASIC_FOR(rt, line, tokens) {
+function BASIC_FOR(line, tokens) {
     // Scalar numerical variable expected at tokens[1].
     const name = tokens[1].token;
     if (tokens[1].type !== "variable" || name.at(-1) === "$" || tokens[2].type !== "==")
-        throw `SCALAR NUMERICAL VARIABLE EXPECTED AS FOR VARIABLE AT ${line}`;
-    let e = BASIC_Variable_Assign(rt, line, tokens, 1);
+        throw `SCALAR NUMERICAL VARIABLE EXPECTED AS FOR VARIABLE IN ${line}`;
+    let e = BASIC_Variable_Assign(line, tokens, 1);
     let code = e.code;
-    e = BASIC_Expression(rt, line, tokens, e.t + 1);  // +1 because we skip the "=".
-    if (e.type !== "number") throw "TYPE MISMATCH AT ${line}";
+    e = BASIC_Expression(line, tokens, e.t + 1);  // +1 because we skip the "=".
+    if (e.type !== "number") throw "TYPE MISMATCH IN ${line}";
     code += e.code + ";";
-    if (tokens[e.t].token !== "TO") throw `"TO" EXPECTED AT ${line}`;
-    e = BASIC_Expression(rt, line, tokens, e.t + 1);
-    if (e.type !== "number") throw "TYPE MISMATCH AT ${line}";
+    if (tokens[e.t].token !== "TO") throw `"TO" EXPECTED IN ${line}`;
+    e = BASIC_Expression(line, tokens, e.t + 1);
+    if (e.type !== "number") throw "TYPE MISMATCH IN ${line}";
     code += `rt.vars.${name}.for=rt.ip;rt.vars.${name}.to=` + e.code
         + `;rt.vars.${name}.step=1;`;
     if (tokens[e.t].token === "STEP") {
-        e = BASIC_Expression(rt, line, tokens, e.t + 1);
-        if (e.type !== "number") throw "TYPE MISMATCH AT ${line}";
+        e = BASIC_Expression(line, tokens, e.t + 1);
+        if (e.type !== "number") throw "TYPE MISMATCH IN ${line}";
         code += `rt.vars.${name}.step=` + e.code + ";";
     }
-    if (tokens[e.t].type !== "eol") throw `SYNTAX ERROR AT ${line}`;
+    if (tokens[e.t].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
+    // If the next condition is violated the FOR loop is no executed,
+    // hence we look for the corresponding NEXT instruction and jump
+    // to it at runtime.
+    let index = BASIC_Line_Lookup(line);
+////    while (++index < rt.lines.length && ) {
+////        if 
+////    }
+
+    code = `if((v.step<=0||v.value>v.to)&&(v.step>=0||v.value<v.to))`
+
+
     rt.code[line] = BASIC_Code(code);
 }
 
 /// Check that tokens[0] is a line number and tokens[1] is "eol", and compile
 //  a jump into rt.code[line] preceded by code.
-function BASIC_Compile_jump(rt, line, tokens, code) {
-    if (tokens[0].type != "number") throw `LINE NUMBER EXPECTED AT ${line}`;
-    if (tokens[1].type !== "eol") throw `SYNTAX ERROR AT ${line}`;
+function BASIC_Compile_jump(line, tokens, code) {
+    if (tokens[0].type != "number") throw `LINE NUMBER EXPECTED IN ${line}`;
+    if (tokens[1].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
     // Check if there's a line number tokens[0].tokens and retrieve its index in lines.
-    const index = BASIC_Line_Lookup(rt, tokens[0].token);
-    if (index < 0) throw `ILLEGAL LINE NUMBER AT ${line}`;
+    const index = BASIC_Line_Lookup(tokens[0].token);
+    if (index < 0) throw `ILLEGAL LINE NUMBER IN ${line}`;
     rt.code[line] = BASIC_Code(code += `rt.ip = ${index};`);
 }
 
-function BASIC_GOSUB(rt, line, tokens) {
-    BASIC_Compile_jump(rt, line, tokens.slice(1), "rt.stack.push(rt.ip);");
+function BASIC_GO(line, tokens) {
+    switch (tokens[1].token) {
+        case "TO": BASIC_GOTO(line, tokens.slice(1)); break;
+        case "SUB": BASIC_GOSUB(line, tokens.slice(1)); break;
+        default: throw `ILLEGAL INSTRUCTION IN ${line}`;
+}}
+
+function BASIC_GOSUB(line, tokens) {
+    BASIC_Compile_jump(line, tokens.slice(1), "rt.stack.push(rt.ip);");
 }
 
-function BASIC_GOTO(rt, line, tokens) {
-    BASIC_Compile_jump(rt, line, tokens.slice(1), "");
+function BASIC_GOTO(line, tokens) {
+    BASIC_Compile_jump(line, tokens.slice(1), "");
 }
 
-function BASIC_IF(rt, line, tokens) {
+function BASIC_IF(line, tokens) {
     let code = "if(";
-    const c = BASIC_Comparison(rt, line, tokens, 1);
+    const c = BASIC_Comparison(line, tokens, 1);
     code += c.code + ")";
-    if (tokens[c.t].token !== "THEN") throw `SYNTAX ERROR AT ${line}`;
-    BASIC_Compile_jump(rt, line, tokens.slice(c.t + 1), code);
+    if (tokens[c.t].token !== "THEN" && tokens[c.t].token !== "GOTO"
+    && tokens[c.t].token !== "GO" && tokens[c.t+1].token !== "TO")
+        throw `SYNTAX ERROR IN ${line}`;
+    BASIC_Compile_jump(line, tokens.slice(c.t + 1), code);
 }
 
-function BASIC_INPUT(rt, line, tokens) {
+function BASIC_INPUT(line, tokens) {
     let t = 1;
     let code = "";
     for (;;) {
         // Since code will be processed by eval, we wrap the async TTY_Read inside a IIFE.
-        code += `prompt=rt.prompt;rt.prompt="?";rt.in='';rt.cursor=0;await TTY_Read(rt);`
-        const v = BASIC_Variable_Assign(rt, line, tokens, t);
+        code += `prompt=rt.prompt;rt.prompt="?";rt.in='';rt.cursor=0;await TTY_Read();`
+        const v = BASIC_Variable_Assign(line, tokens, t);
         // Compile the runtime function that parses a text line and parses
         // a value of the given type from it. 
         code += v.code + ((v.type === "number") ? "parseFloat(rt.in);" : "rt.in;");
         t = v.t;
         if (tokens[t].type === "eol") break;
-        if (tokens[t].type !== ",") throw `SYNTAX ERROR AT ${line}`;
+        if (tokens[t].type !== ",") throw `SYNTAX ERROR IN ${line}`;
         ++t;   // Skip the comma
     }
     rt.code[line] = BASIC_Code(code + "rt.prompt=prompt;");
 }
 
-function BASIC_LET(rt, line, tokens) {
-    const v = BASIC_Variable_Assign(rt, line, tokens, 1);
+function BASIC_LET(line, tokens) {
+    const v = BASIC_Variable_Assign(line, tokens, 1);
     const type = v.type;
     let code = v.code;
     let t = v.t;
-    if (tokens[t].type !== "==") throw `"=" EXPECTED AT ${line}`;
-    const e = BASIC_Expression(rt, line, tokens, t + 1);
-    if (e.type !== type) throw "TYPE MISMATCH AT ${line}";
+    if (tokens[t].type !== "==") throw `"=" EXPECTED IN ${line}`;
+    const e = BASIC_Expression(line, tokens, t + 1);
+    if (e.type !== type) throw "TYPE MISMATCH IN ${line}";
     code += `${e.code};`;
-    if (tokens[e.t].type !== "eol") throw `SYNTAX ERROR AT ${line}`;
+    if (tokens[e.t].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
     rt.code[line] = BASIC_Code(code);
 }
 
-function BASIC_NEXT(rt, line, tokens) {
-    const v = tokens[1].token;
-    if (tokens[1].type !== "variable" || v.at(-1) == "$")
-        throw `SCALAR NUMERICAL VARIABLE EXPECTED AT ${line}`;
-    if (tokens[2].type !== "eol") throw `SYNTAX ERROR AT ${line}`;
-    if (!rt.vars[v]) BASIC_Variable_Insert(rt, v, 0, 0, 0);
-    // Compile the code that perform the check on the variable
-    // and possily iterate the loop.
-    rt.code[line] = BASIC_Code(`const v=rt.vars[${v}];if(!v.for)throw"FOR-NEXT VARIABLE MISMATCH AT ${line}";v.value+=v.step;if((v.step>0&&v.value<=v.to)||(v.step<0&&v.value>=v.to))rt.ip=v.for;`);
+function BASIC_MAT(line, tokens) {
+    rt.code[line] = BASIC_Code("");
 }
 
-function BASIC_PRINT(rt, line, tokens) {
+function BASIC_NEXT(line, tokens) {
+    const v = tokens[1].token;
+    if (tokens[1].type !== "variable" || v.at(-1) == "$")
+        throw `SCALAR NUMERICAL VARIABLE EXPECTED IN ${line}`;
+    if (tokens[2].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
+    if (!rt.vars[v]) BASIC_Variable_Insert(v, 0);
+    // Compile the code that perform the check on the variable
+    // and possily iterate the loop.
+    rt.code[line] = BASIC_Code(`const v=rt.vars.${v};if(!v.for)throw"NEXT WITHOUT FOR IN ${line}";v.value+=v.step;if((v.step>0&&v.value<=v.to)||(v.step<0&&v.value>=v.to))rt.ip=v.for;`);
+}
+
+function BASIC_ON(line, tokens) {
+    const e = BASIC_Expression(line, tokens, 1);
+    if (e.type !== "number") throw `NUMBER EXPECTED IN ${line}`;
+    if (tokens[e.t].token !== "THEN" && tokens[e.t].token !== "GOTO"
+    && tokens[e.t].token !== "GO" && tokens[e.t+1].token !== "TO")
+        throw `SYNTAX ERROR IN ${line}`;
+    let t = e.t + (tokens[e.t+1].token !== "TO" ? 2 : 1);
+    // Now parse the list of possible line numbers, converting them to indexes
+    // in rt.lines. In the runtime code, the integer part of the expression
+    // will index the corresponding line to jump to.
+    let code = `const a=[`;
+    do {
+        if (tokens[t].type !== "number") throw `LINE NUMBER EXPECTED IN ${line}`;
+        const index = BASIC_Line_Lookup(tokens[t].token);
+        if (index < 0) throw `UNDEFINED LINE NUMBER IN ${line}`;
+        code += index + ",";
+        ++ t;
+    } while (tokens[t++].type === ",");
+    if (tokens[t-1].type !== "eol") throw `SYNTAX ERROR IN ${line}`;
+    code += `];const i=Math.floor(${e.code})-1;if(i<0||i>=a.length)throw"ON EVALUATED OUT OF RANGE IN ${line}";rt.ip=a[i];`
+    rt.code[line] = BASIC_Code(code);
+}
+
+function BASIC_PRINT(line, tokens) {
     let t = 1;
     let code = "let p='';";
-    while (tokens[t] !== "eol") {
-        const e = BASIC_Expression(rt, line, tokens, t);
+    let last_was_number = false;    // After a number ";" puts a space
+    while (tokens[t].type !== "eol") {
+        if (tokens[t].type === "string") {
+            // After a string there's no need for "," or ";"
+            code += `p+="${tokens[t].token}";`;
+            ++ t;
+            last_was_number = false;
+            continue;
+        }
+        if (tokens[t].type === ",") {
+            code += "p+='\t';";
+            ++ t;
+            last_was_number = false;
+            continue;
+        }
+        if (tokens[t].type === ";") {
+            ++ t;
+            if (last_was_number) code += `p+=" ";`;
+            last_was_number = false;
+            continue;
+        }
+        const e = BASIC_Expression(line, tokens, t);
+        last_was_number = e.type === "number";
         code += `p+=${e.code};`;
         t = e.t;
-        if (tokens[t].type === "eol") break;
-        if (tokens[t].type === ",") { code += "p+='\t'"; continue; }
-        if (tokens[t].type !== ";") throw `ILLEGAL STATEMENT AT ${line}`;
-        ++t;   // Skip the comma or semi-colon
     }
-    rt.code[line] = BASIC_Code(code + "rt.out.push(p);TTY_Refresh(rt);");
+    rt.code[line] = BASIC_Code(code + "rt.out.push(p);TTY_Refresh();");
 }
 
 /** The behaviour of INPUT in this version of BASIC is such that strings
  *  are always read in a single line, as in LINE INPUT of some dialects. */
-async function BASIC_RT_READ(line, type) {
-    if (rt.dp >= rt.data.length) throw `OUT OF DATA AT ${line}`;
+function BASIC_RT_READ(line, type) {
+    if (rt.dp >= rt.data.length) throw `OUT OF DATA IN ${line}`;
     const d = rt.data[rt.dp++];
-    if (typeof d !== type) throw `READ DATA MISMATCH AT ${line}`;
+    if (typeof d !== type) throw `READ DATA MISMATCH IN ${line}`;
     return d;
 }
 
-function BASIC_READ(rt, line, tokens) {
+function BASIC_READ(line, tokens) {
     let t = 1;
     let code = "";
     for (; ;) {
-        const v = BASIC_Variable_Assign(rt, line, tokens, t);
+        const v = BASIC_Variable_Assign(line, tokens, t);
         // Compile the runtime function that reads the next DATA element. 
         code += v.code + `BASIC_RT_READ(${line}, "${v.type}");`;
         t = v.t;
         if (tokens[t].type === "eol") break;
-        if (tokens[t].type !== ",") throw `ILLEGAL STATEMENT AT ${line}`;
+        if (tokens[t].type !== ",") throw `ILLEGAL STATEMENT IN ${line}`;
         ++t;   // Skip the comma
     }
     rt.code[line] = BASIC_Code(code);
 }
 
-function BASIC_REM(rt, line, tokens) {
+function BASIC_REM(line, tokens) {
     rt.code[line] = BASIC_Code("");
 }
 
-function BASIC_RESTORE(rt, line, tokens) {
+function BASIC_RESTORE(line, tokens) {
     rt.code[line] = BASIC_Code("rt.dp=0;");
 }
 
-function BASIC_RETURN(rt, line, tokens) {
-    rt.code[line] = BASIC_Code(`if(rt.stack.length===0) throw "RETURN WITHOUT GOSUB AT ${line}";rt.ip=rt.stack.pop();`);
+function BASIC_RETURN(line, tokens) {
+    rt.code[line] = BASIC_Code(`if(rt.stack.length===0) throw "RETURN WITHOUT GOSUB IN ${line}";rt.ip=rt.stack.pop();`);
 }
 
-function BASIC_STOP(rt, line, tokens) {
+function BASIC_STOP(line, tokens) {
     // Compile the code to end the program.
     rt.code[line] = BASIC_Code("rt.ip=rt.lines.length;rt.error='OK';");
 }
@@ -942,44 +971,44 @@ function BASIC_STOP(rt, line, tokens) {
 //  FUNCTIONS COMPILING BASIC FUNCTIONS
 
 /// Compile a generic numerical function with numerical argument.
-function BASIC_Func(rt, line, tokens, t, jsfun) {
-    const o = BASIC_Operand(rt, line, tokens, t);
-    if (o.type !== "number") throw `NUMBER EXPECTED AFTER ${tokens[t].token} AT ${line}`;
+function BASIC_Func(line, tokens, t, jsfun) {
+    const o = BASIC_Operand(line, tokens, t);
+    if (o.type !== "number") throw `NUMBER EXPECTED AFTER ${tokens[t].token} IN ${line}`;
     o.code = `${jsfun}(${o.code})`;
     return o;
 }
 
-function BASIC_ABS(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.abs"); }
-function BASIC_ATN(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.atan"); }
-function BASIC_COS(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.cos"); }
-function BASIC_EXP(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.exp"); }
-function BASIC_INT(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.floor"); }
-function BASIC_LOG(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.log"); }
-function BASIC_RND(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.random"); }
-function BASIC_SGN(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.sign"); }
-function BASIC_SIN(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.sin"); }
-function BASIC_SQR(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.sqrt"); }
-function BASIC_TAN(rt, line, tokens, t) { return BASIC_Func(rt, line, tokens, t, "Math.tan"); }
+function BASIC_ABS(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.abs"); }
+function BASIC_ATN(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.atan"); }
+function BASIC_COS(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.cos"); }
+function BASIC_EXP(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.exp"); }
+function BASIC_INT(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.floor"); }
+function BASIC_LOG(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.log"); }
+function BASIC_RND(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.random"); }
+function BASIC_SGN(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.sign"); }
+function BASIC_SIN(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.sin"); }
+function BASIC_SQR(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.sqrt"); }
+function BASIC_TAN(line, tokens, t) { return BASIC_Func(line, tokens, t, "Math.tan"); }
 
-function BASIC_ASC(rt, line, tokens, t) {
-    const o = BASIC_Operand(rt, line, tokens, t);
-    if (o.type !== "string") throw `STRING EXPECTED AFTER ${tokens[t].token} AT ${line}`;
+function BASIC_ASC(line, tokens, t) {
+    const o = BASIC_Operand(line, tokens, t);
+    if (o.type !== "string") throw `STRING EXPECTED AFTER ${tokens[t].token} IN ${line}`;
     o.code += `((${o.code}).charCodeAt(0)||0)`;
     o.type = "number";
     return o;
 }
 
-function BASIC_CHR$(rt, line, tokens, t) {
-    const o = BASIC_Operand(rt, line, tokens, t);
-    if (o.type !== "number") throw `NUMBER EXPECTED AFTER ${tokens[t].token} AT ${line}`;
+function BASIC_CHR$(line, tokens, t) {
+    const o = BASIC_Operand(line, tokens, t);
+    if (o.type !== "number") throw `NUMBER EXPECTED AFTER ${tokens[t].token} IN ${line}`;
     o.code = `(String.fromCharCode(${o.code}))`;
     o.type = "string";
     return o;
 }
 
-function BASIC_LEN(rt, line, tokens, t) {
-    const o = BASIC_Operand(rt, line, tokens, t);
-    if (o.type !== "string") throw `STRING EXPECTED AFTER ${tokens[t].token} AT ${line}`;
+function BASIC_LEN(line, tokens, t) {
+    const o = BASIC_Operand(line, tokens, t);
+    if (o.type !== "string") throw `STRING EXPECTED AFTER ${tokens[t].token} IN ${line}`;
     o.code = `((${o.code}).length)`;
     o.type = "number";
     return o;
