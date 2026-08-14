@@ -6,7 +6,7 @@
     <style>
         body {
             background: #000; color: #0f0; font-family: monospace; padding: 20px;
-            font-size: 18px; display: flex; align-items: center; white-space: pre;
+            font-size: 18px; display: flex; align-items: left; white-space: pre;
         }
     </style>
 </head>
@@ -55,7 +55,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Handle drag and drop of a file into the window.
-const TERM = document.getElementById("terminal");
+const TERM = document.body;
+//const TERM = document.getElementById("terminal");
 TERM.addEventListener('dragover', e => {
     e.preventDefault();
     TERM.classList.add('dragover');
@@ -133,13 +134,15 @@ async function TTY_Read() {
                     ++rt.cursor;
 }}}}
 
+//
 //  C O M M A N D   I N T E R P R E T E R
+//
 
 /// Transform a number into a line number (with preceding spaces if needed)
 const CMD_Line_Number = (n) => ("   " + n).slice(-4);
 
 // CMD_Commands.F(args) is a function which executes a command of the terminal
-// inside the passed runtime rt, and using the string args as possible argument.
+// inside the global runtime rt, accepting a string args as possible argument.
 const CMD_Commands = {
     BASIC: CMD_BASIC, BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC, LIST: CMD_LIST,
     MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD, RUN: CMD_RUN, SAVE: CMD_SAVE,
@@ -148,7 +151,6 @@ const CMD_Commands = {
 
 /// Parse and execute a system command from rt.in.
 async function CMD() {
-// console.trace("La funzione è stata eseguita da qui:");
     rt.error = "OK";
     let text = rt.in.match(/^\s*(\d*)\s*(.*)\s*$/);
     // Here text[0] = rt.in, text[1] = line number, text[3] = rest of line.
@@ -375,6 +377,7 @@ async function CMD_VARS(args) {
 
 //
 //  B A S I C   C O M P I L E R
+//
 
 const BASIC_Keywords =  {
     CHANGE: BASIC_CHANGE, DATA: BASIC_DATA, DIM: BASIC_DIM, END: BASIC_END,
