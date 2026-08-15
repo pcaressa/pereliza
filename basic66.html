@@ -21,13 +21,15 @@
 const rt = {
     // Terminal data
     active: true,   // Flag false when the session is ended (BYE sets it to false).
-    height: 22,     // Vertical size of the terminal screen.
+    height: 24,     // Vertical size of the terminal screen.
     in: "",         // Current input text.
     cursor: 0,      // Position of cursor in Input
+    nonewline:false,// True if TTY_Print should continue to print on the last line of rt.out.
     prompt: ">",    // Prompt when asking for an input text
     out: [],        // Text printed so far.
     error: null,    // Error message after command.
     saved: true,    // False if the source text had been modified and not saved.
+    width: 75,      // Horizontal size of the terminal screen.
     // Basic compiler data
     code: {},       // Object code.
     data: [],       // All data defined by DATA statements.
@@ -42,15 +44,15 @@ const rt = {
 };
 
 /// MAIN PROGRAM: run the REPL as soon as the document is loaded.
-document.addEventListener('DOMContentLoaded', async () => {
-    rt.out.push("BASIC66 - A DARTMOUTH BASIC DIALECT");
-    rt.out.push("(C) 2026 BY PAOLO CARESSA");
-    rt.out.push("TERMINAL 1 ON AT " + new Date().toDateString())
-    rt.out.push("READY");
+document.addEventListener('DOMContentLoaded', async ()  => {
+    TTY_Print("BASIC66 - A DARTMOUTH BASIC DIALECT");
+    TTY_Print("(C) 2026 BY PAOLO CARESSA");
+    TTY_Print("TERMINAL ON AT " + new Date().toDateString().toUpperCase());
+    TTY_Print("READY");
     while (rt.active) {
         await TTY_Read()
         await CMD();
-        if (rt.error) rt.out.push(rt.error);
+        if (rt.error) TTY_Print(rt.error);
     }
 });
 
@@ -88,20 +90,50 @@ async function TTY_Key() {
             resolve(event.key); // Return the key name
 });});}
 
+/// Converts "\t" characters in spaces in a string.
+function TTY_Explode_Tabs(s) {
+    let t = "";
+    for (let i = 0; i < s.length; ++ i)
+        if (s[i] !== "\t") t += s[i];
+        else {
+            t += " ";
+            while (t.length % 15 !== 0) t += " ";
+        }
+    return t;
+}
+
+/// Print a string on the terminal buffer: if the string is too long,
+/// it is split in several lines
+function TTY_Print(s) {
+    if (rt.nonewline) {
+        // Append to the last inserted line
+        let line = TTY_Explode_Tabs(rt.out.pop() + s);
+        rt.out.push(line.slice(0, rt.width));
+        // If the line is too long, change s to the exceeding part
+        // and use the code after the if block
+        s = line.slice(rt.width);
+        rt.nonewline = false;
+    }
+    s = TTY_Explode_Tabs(s);
+    while (s.length >= rt.width) {
+        rt.out.push(s.slice(0, rt.width));
+        s = s.slice(rt.width);
+    }
+    if (s.length > 0) rt.out.push(s);
+}
+
 /// Refresh the terminal by printing rt.height lines from the start-th
 /// on of the rt.out list.
 function TTY_Refresh(start) {
-    if (!start) start = rt.out.length - rt.height;
-    if (start < 0) start = 0;
-    let t = "";
-    for (let i = start; i < start + rt.height && i < rt.out.length; ++i)
-        t += rt.out[i] + "<br>";
-    t += rt.prompt + rt.in.slice(0, rt.cursor) + "&brvbar;" + rt.in.slice(rt.cursor);
-    document.getElementById("terminal").innerHTML = t;
+    if (start === undefined) start = Math.max(0, rt.out.length - rt.height);
+    let end = Math.min(start + rt.height, rt.out.length);
+    let t = rt.out.slice(start, end);
+    t.push(rt.prompt + rt.in.slice(0, rt.cursor) + "¦" + rt.in.slice(rt.cursor));
+    document.getElementById("terminal").innerText = t.join("\n");
 }
 
 /// Read a text line, echoing its characters; return when Enter is pressed,
-///  the read line is stored into rt.in.
+/// the read line is stored into rt.in.
 async function TTY_Read() {
     rt.in = "";
     rt.cursor = 0;
@@ -112,9 +144,11 @@ async function TTY_Read() {
         const key = await TTY_Key();
         //console.log(key);
         switch (key) {
-            case "Enter": rt.out.push(rt.prompt + rt.in); return;
+            case 
+             "Enter": TTY_Print(rt.prompt + rt.in); return;
             case "ArrowUp": if (start > 1) -- start; continue;
-            case "ArrowDown": if (start < rt.out.length - rt.height) ++ start; continue;
+            case "ArrowDown": if 
+             (start < rt.out.length - rt.height) ++ start; continue;
             case "ArrowLeft": if (rt.cursor > 0) --rt.cursor; continue;
             case "ArrowRight": if (rt.cursor < rt.in.length) ++rt.cursor; continue;
             case "Backspace":
@@ -144,9 +178,8 @@ const CMD_Line_Number = (n) => ("   " + n).slice(-4);
 // CMD_Commands.F(args) is a function which executes a command of the terminal
 // inside the global runtime rt, accepting a string args as possible argument.
 const CMD_Commands = {
-    BASIC: CMD_BASIC, BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC, LIST: CMD_LIST,
-    MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD, RUN: CMD_RUN, SAVE: CMD_SAVE,
-    VARS: CMD_VARS
+    BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC, LIST: CMD_LIST,
+    MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD, SAVE: CMD_SAVE
 };
 
 /// Parse and execute a system command from rt.in.
@@ -175,14 +208,15 @@ async function CMD() {
         else rt.error = "ILLEGAL COMMAND";
     } else {    // Empty line
         rt.error = null;
-}}
+    }
+}
 
 /// Execute each line of a text file as a command: if the line starts
 /// with a line number, it has the same effect as introduced interactively.
 async function CMD_Load_File(file) {
     if (file) {
         if (!rt.saved && !confirm("OVERWRITE UNSAVED PROGRAM?")) {
-            rt.out.push(`FILE ${file.name} NOT LOADED`);
+            TTY_Print(`FILE ${file.name} NOT LOADED`);
         } else {
             const text = (await file.text()).split("\n");
             const rtin = rt.in;
@@ -193,37 +227,20 @@ async function CMD_Load_File(file) {
                 for (let j = 0; j < t.length; ++j)
                     rt.in += TTY_Char(t[j]);
                 await CMD();
+                if (rt.error && rt.error !== "OK")
+                    TTY_Print(rt.error);
             }
             rt.in = rtin;
             rt.name = file.name;
-            rt.out.push(`FILE ${file.name} LOADED`);
+            TTY_Print(`FILE ${file.name} LOADED`);
             rt.saved = true;
         }
         TTY_Refresh();
 }}
 
-async function CMD_BASIC(args) {
-    rt.error = "OK";
-    rt.noend = true;
-    rt.code = {};
-    rt.data = [];
-    rt.vars = {};
-    rt.lines = Object.keys(rt.source).sort((a,b)=>(parseInt(a) < parseInt(b)));
-    try {
-        for (rt.lp of rt.lines) {
-            const tokens = BASIC_Parse();
-            if (tokens[0].type === "keyword") tokens[0].token(tokens);  // tokens[0].token is a function!
-            else throw "ILLEGAL INSTRUCTION IN";
-        }
-        if (rt.noend) throw "NO END INSTRUCTION";
-    } catch (e) {
-        rt.error = e;
-        if (rt.lines[rt.lp]) rt.error += " IN " + rt.lines[rt.lp];
-}}
-
 async function CMD_BYE(args) {
-    rt.out.push("GOODBYE");
-    rt.out.push("*** OFF AT " + new Date().toDateString());
+    TTY_Print("GOODBYE");
+    TTY_Print(`*** OFF AT ${new Date().toISOString().toUpperCase()}`);
     TTY_Refresh();
     rt.active = false;
 }
@@ -234,7 +251,7 @@ async function CMD_Parse_first_last(list, args) {
     rt.lines = Object.keys(list).sort((a,b)=>(parseInt(a) < parseInt(b)));
     let first = 0;
     let last = rt.lines.length - 1;
-    const nls = args.match(/^\s*(\d*)\s*-\s*(\d*)\s*$/);
+    const nls = args.match(/^\s*(\d*)\s*\-\s*(\d*)\s*$/);
     // Here nls[1] = from line, text[2] = to line.
     if (nls && nls[1]) {
         const nls1 = parseInt(nls[1]);
@@ -252,11 +269,14 @@ async function CMD_Parse_first_last(list, args) {
 /// List from the first to the last lines the list object: it assumes that
 //  rt.lines contains the sorted list of all lines of the list argument.
 async function CMD_Listing(list, first, last) {
+    TTY_Print(" ");
+    TTY_Print(` ${rt.name}`);
+    TTY_Print(" ");
     let start = rt.out.length;
     while (first <= last) {
         // Prints a first chunk of the program on the screen
         for (let counter = 1; counter < rt.height && first <= last; ++counter, ++first)
-            rt.out.push(CMD_Line_Number(rt.lines[first]) + " " + list[rt.lines[first]]);
+            TTY_Print(CMD_Line_Number(rt.lines[first]) + " " + list[rt.lines[first]]);
         if (first > last) break;
         TTY_Refresh(start);
         document.getElementById("terminal").innerHTML += "PRESS A KEY TO CONTINUE";
@@ -268,16 +288,13 @@ async function CMD_Listing(list, first, last) {
 
 async function CMD_CODE(args) {
     const pair = await CMD_Parse_first_last(rt.code, args);
-    rt.out.push("");
-    rt.out.push(`CODE ${rt.name}`);
-    rt.out.push("");
     await CMD_Listing(rt.code, pair.first, pair.last);
 }
 
 async function CMD_EXEC(args) {
-    rt.out.push("");
-    rt.out.push(rt.name);
-    rt.out.push("");
+    TTY_Print(" ");
+    TTY_Print(` ${rt.name}  ${new Date().toISOString().toUpperCase()}`);
+    TTY_Print(" ");
     if (rt.lines.length == 0) return;
     rt.stack = [];  // Return stack from GOSUBs
     rt.lp = 0;      // Index of line number in rt.lines to execute next.
@@ -290,17 +307,14 @@ async function CMD_EXEC(args) {
 console.log(`EXEC[${rt.lines[rt.lp - 1]}]`, rt.code[rt.lines[rt.lp - 1]]);
             await rt.code[rt.lines[rt.lp - 1]]();
         } while (rt.lp < rt.lines.length);
-        rt.out.push("");
-        rt.out.push(`TIME:  ${Math.floor((new Date() - t0)/1000)} SECS.`);
+        TTY_Print(" ");
+        TTY_Print(`TIME:  ${Math.floor((new Date() - t0))} MILLISECS.`);
     } catch (e) {
         rt.error = e + " IN " + rt.lines[rt.lp];
 }}
 
 async function CMD_LIST(args) {
     const pair = await CMD_Parse_first_last(rt.source, args);
-    rt.out.push("");
-    rt.out.push(`PROGRAM ${rt.name}`);
-    rt.out.push("");
     await CMD_Listing(rt.source, pair.first, pair.last);
 }
 
@@ -333,14 +347,9 @@ async function CMD_OLD(args) {
         CMD_MERGE(args);
 }}
 
-async function CMD_RUN(args) {
-    await CMD_BASIC(args);
-    if (rt.error === "OK") await CMD_EXEC(args);
-}
-
 async function CMD_SAVE(args) {
     if (rt.saved) {
-        rt.out.push(`FILE ${rt.name} ALREADY SAVED`);
+        TTY_Print(`FILE ${rt.name} ALREADY SAVED`);
         return;
     }
     const text = [];
@@ -356,6 +365,56 @@ async function CMD_SAVE(args) {
     rt.saved = true;
 }
 
+//
+//  B A S I C   C O M P I L E R
+//
+
+const BASIC_Keywords =  {
+    CHANGE: BASIC_CHANGE, DATA: BASIC_DATA, DIM: BASIC_DIM, END: BASIC_END,
+    FOR: BASIC_FOR, GO: BASIC_GO, GOSUB: BASIC_GOSUB, GOTO: BASIC_GOTO,
+    IF: BASIC_IF, INPUT: BASIC_INPUT, LET: BASIC_LET, MAT: BASIC_MAT,
+    NEXT: BASIC_NEXT, ON: BASIC_ON, PRINT: BASIC_PRINT,
+    RANDOMIZE: BASIC_RANDOMIZE, READ: BASIC_READ, REM: BASIC_REM,
+    RESTORE: BASIC_RESTORE, RETURN: BASIC_RETURN, STOP: BASIC_STOP
+};
+
+const BASIC_Functions = {
+    ABS: BASIC_ABS, ASC: BASIC_ASC, ATN: BASIC_ATN, CHR$: BASIC_CHR$,
+    COS: BASIC_COS, EXP: BASIC_EXP, INT: BASIC_INT, LEN: BASIC_LEN,
+    LOG: BASIC_LOG, RND: BASIC_RND, SGN: BASIC_SGN, SIN: BASIC_SIN,
+    SQR: BASIC_SQR, TAN: BASIC_TAN
+};
+
+CMD_Commands.BASIC = CMD_BASIC;
+CMD_Commands.RUN = CMD_RUN;
+CMD_Commands.VARS = CMD_VARS;
+
+/// Compile rt.source into rt.code, rt.data and rt.vars.
+async function CMD_BASIC(args) {
+    rt.error = "OK";
+    rt.noend = true;
+    rt.code = {};
+    rt.data = [];
+    rt.vars = {};
+    rt.lines = Object.keys(rt.source).sort((a,b)=>(parseInt(a) < parseInt(b)));
+    try {
+        for (rt.lp of rt.lines) {
+            const tokens = BASIC_Parse();
+            if (tokens[0].type === "keyword") tokens[0].token(tokens);  // tokens[0].token is a function!
+            else throw "ILLEGAL INSTRUCTION";
+        }
+        if (rt.noend) throw "NO END INSTRUCTION";
+    } catch (e) {
+        rt.error = e;
+        if (rt.lp >= rt.lines[0] && rt.lp <= rt.lines.at(-1))
+            rt.error += " IN " + rt.lp;
+}}
+
+async function CMD_RUN(args) {
+    await CMD_BASIC(args);
+    if (rt.error === "OK") await CMD_EXEC(args);
+}
+
 async function CMD_VARS(args) {
     const names = Object.keys(rt.vars).sort();
     let start = rt.out.length;
@@ -363,8 +422,8 @@ async function CMD_VARS(args) {
         // Prints a first chunk of the program on the screen
         for (let counter = 1; counter < rt.height && i < names.length; ++counter, ++i) {
             let name = names[i];
-            if (name.at(-1) == '@') name = name.slice(0,-1) + "()";
-            rt.out.push(`${name} = ${rt.vars[names[i]].value}`);
+            if (name.at(-1) == '@') name = name.slice(0,-1) + "()";   
+            TTY_Print(`${name} = ${rt.vars[names[i]].value}`);
         }
         if (i == names.length) break;
         TTY_Refresh(start);
@@ -375,30 +434,11 @@ async function CMD_VARS(args) {
     TTY_Refresh(start);
 }
 
-//
-//  B A S I C   C O M P I L E R
-//
-
-const BASIC_Keywords =  {
-    CHANGE: BASIC_CHANGE, DATA: BASIC_DATA, DIM: BASIC_DIM, END: BASIC_END,
-    FOR: BASIC_FOR, GO: BASIC_GO, GOSUB: BASIC_GOSUB, GOTO: BASIC_GOTO,
-    IF: BASIC_IF, INPUT: BASIC_INPUT, LET: BASIC_LET, MAT: BASIC_MAT,
-    NEXT: BASIC_NEXT, ON: BASIC_ON, PRINT: BASIC_PRINT, READ: BASIC_READ,
-    REM: BASIC_REM, RESTORE: BASIC_RESTORE, RETURN: BASIC_RETURN, STOP: BASIC_STOP
-};
-
-const BASIC_Functions = {
-    ABS: BASIC_ABS, ASC: BASIC_ASC, ATN: BASIC_ATN, CHR$: BASIC_CHR$,
-    COS: BASIC_COS, EXP: BASIC_EXP, INT: BASIC_INT, LEN: BASIC_LEN,
-    LOG: BASIC_LOG, RND: BASIC_RND, SGN: BASIC_SGN, SIN: BASIC_SIN,
-    SQR: BASIC_SQR, TAN: BASIC_TAN
-};
-
-/** Parse line rt.lp of the BASIC source and return the list of parsed tokens,
- *  which are pairs {type:"...", token:...), where type can be: "number",
- * "string", "keyword", "variable" or in case of delimiter the delimiter
- *  itself. Values are numbers, strings, functions, strings (key to rt.vars).
- *  The last token of the list is always {type:"eol", token:null}. */
+/// Parse line rt.lp of the BASIC source and return the list of parsed tokens,
+/// which are pairs {type:"...", token:...), where type can be: "number",
+/// "string", "keyword", "variable" or in case of delimiter the delimiter
+/// itself. Values are numbers, strings, functions, strings (key to rt.vars).
+/// The last token of the list is always {type:"eol", token:null}.
 function BASIC_Parse() {
     let s = rt.source[rt.lp];
     const isalpha = (c) => (c >= "a" && c <= "z" || c >= "A" && c <= "Z");
@@ -409,11 +449,13 @@ function BASIC_Parse() {
     while (i < s.length) {
         if (s[i] < " " || s[i] > "~") throw "ILLEGAL CHARACTER";
         // Check against a number in the first place.
-        const r = /[+-]?\d+(?:\.\d+)?/y;
+        const r = /(:?\d+(?:\.\d+)?|\.\d+)(:?\E[+-]?\d+)?/y;
         r.lastIndex = i;
         const match = r.exec(s);
         if (match) {
-            tokens.push({ type: "number", token: Number(match[0]) });
+            let n = Number(match[0]);
+            if (!isFinite(n)) throw "ILLEGAL CONSTANT";
+            tokens.push({type: "number", token: n});
             i = r.lastIndex;
         } else if (s[i] === " ") {         // Ignore blanks.
             ++i;
@@ -476,7 +518,7 @@ function BASIC_Expression(tokens, t) {
             if (type !== "number") throw "MISMATCHED STRING OPERATION";
             code += tokens[t].type;
         }
-        ++t;
+        ++ t;
 }}
 
 /// Compile an expression operand and return an object {type: ..., code: ...,
@@ -489,8 +531,8 @@ function BASIC_Operand(tokens, t) {
     for (;;) {
         switch (tokens[t].type) {
             case "string":
-                // A string is a N + 1 vector of characters where the 0-th one is the length.
-                // return {type: "string", code: code + `"${String.fromCharCode(tokens[t].token.length) + tokens[t].token}"`, t: t + 1};
+                // A string is a N + 1 vector of characters where the 0-th one
+                // is the length.
                 return {type: "string", code: code + `"${tokens[t].token}"`, t: t + 1};
             case "number":
                 return {type: "number", code: code + "" + tokens[t].token, t: t + 1};
@@ -515,7 +557,7 @@ function BASIC_Operand(tokens, t) {
         throw "ILLEGAL FORMULA";
 }}
 
-function BASIC_Comparison(tokens, t) {
+function BASIC_Relation(tokens, t) {
     const e1 = BASIC_Expression(tokens, t);
     const type = e1.type;
     let code = e1.code;
@@ -703,14 +745,21 @@ function BASIC_CHANGE(tokens) {
 }
 
 /// This does not compile code, but parse constants that are stored
-//  in the rt.ddata array.
+/// in the rt.ddata array.
 function BASIC_DATA(tokens) {
     let t = 1;
     for (;;) {
-        if (tokens[t].type !== "number" && tokens[t].type !== "string")
+        // [-+] number | string
+        if (tokens[t].type === "number" || tokens[t].type === "string") {
+            rt.data.push(tokens[t].token);
+            ++ t;
+        } else if ((tokens[t].type === "+" || tokens[t].type === "-")
+        && tokens[t+1].type === "number") {
+            rt.data.push(parseFloat(tokens[t].type + tokens[t+1].token));
+            t += 2;
+        } else {
             throw "ILLEGAL CONSTANT";
-        rt.data.push(tokens[t].token);
-        ++t;
+        }
         if (tokens[t].type === "eol") break;
         if (tokens[t].type !== ",") throw "ILLEGAL FORMAT";
         ++t;   // Skip the comma
@@ -823,7 +872,7 @@ function BASIC_GOTO(tokens) {
 
 function BASIC_IF(tokens) {
     let code = "if(";
-    const c = BASIC_Comparison(tokens, 1);
+    const c = BASIC_Relation(tokens, 1);
     code += c.code + ")";
     if (tokens[c.t].token !== "THEN" && tokens[c.t].token !== "GOTO"
     && tokens[c.t].token !== "GO" && tokens[c.t+1].token !== "TO")
@@ -901,37 +950,44 @@ function BASIC_ON(tokens) {
 function BASIC_PRINT(tokens) {
     let t = 1;
     let code = "let p='';";
-    let last_was_number = false;    // After a number ";" puts a space
+    let newline = true;     // true if a newline should be issued after printing.
+    let last_was_number = false;
     while (tokens[t].type !== "eol") {
         if (tokens[t].type === "string") {
             // After a string there's no need for "," or ";"
             code += `p+="${tokens[t].token}";`;
             ++ t;
-            last_was_number = false;
+            newline = true;
             continue;
         }
         if (tokens[t].type === ",") {
             code += "p+='\t';";
             ++ t;
-            last_was_number = false;
+            newline = false;
             continue;
         }
         if (tokens[t].type === ";") {
             ++ t;
-            if (last_was_number) code += `p+=" ";`;
-            last_was_number = false;
+            newline = false;
             continue;
         }
         const e = BASIC_Expression(tokens, t);
-        last_was_number = e.type === "number";
-        code += `p+=${e.code};`;
+        newline = true;
+        if (e.type === "string") code += `p+=${e.code};`;
+        else code += `p+=" "+(${e.code});`;
         t = e.t;
     }
-    rt.code[rt.lp] = BASIC_Code(code + "rt.out.push(p);TTY_Refresh();");
+    code += "TTY_Print(p);TTY_Refresh();";
+    if (!newline) code += "rt.nonewline=true";
+    rt.code[rt.lp] = BASIC_Code(code);
 }
 
-/** The behaviour of INPUT in this version of BASIC is such that strings
- *  are always read in a single line, as in LINE INPUT of some dialects. */
+function BASIC_RANDOMIZE(tokens) {
+    rt.code[rt.lp] = BASIC_Code("const s=Math.floor(performance.now()*1000)%2147483647;rt.seed=(s===0?1:s);")
+}
+
+/// The behaviour of INPUT in this version of BASIC is such that strings
+/// are always read in a single line, as in LINE INPUT of some dialects.
 function BASIC_RT_READ(type) {
     if (rt.dp >= rt.data.length) throw "OUT OF DATA";
     const d = rt.data[rt.dp++];
@@ -942,7 +998,7 @@ function BASIC_RT_READ(type) {
 function BASIC_READ(tokens) {
     let t = 1;
     let code = "";
-    for (; ;) {
+    for (;;) {
         const v = BASIC_Variable_Assign(tokens, t);
         // Compile the runtime function that reads the next DATA element. 
         code += v.code + `BASIC_RT_READ("${v.type}");`;
@@ -973,6 +1029,22 @@ function BASIC_STOP(tokens) {
 
 //  FUNCTIONS COMPILING BASIC FUNCTIONS
 
+/// Parameters of the classic congruential random generator
+///  LCG standard (MINSTD / Park-Miller)
+rt.seed = 1;
+rt.rnda = 48271;
+rt.rndm = 2147483647;
+
+function BASIC_RT_RND() {
+    rt.seed = (rt.rnda * rt.seed) % rt.rndm;
+    return rt.seed / rt.rndm;
+}
+
+/// RND accepts no parameters.
+function BASIC_RND(tokens, t) {
+    return {type: "number", code: "(BASIC_RT_RND())", t: t};
+}
+
 /// Compile a generic numerical function with numerical argument.
 function BASIC_Func(tokens, t, jsfun) {
     const o = BASIC_Operand(tokens, t);
@@ -987,7 +1059,7 @@ function BASIC_COS(tokens, t) { return BASIC_Func(tokens, t, "Math.cos"); }
 function BASIC_EXP(tokens, t) { return BASIC_Func(tokens, t, "Math.exp"); }
 function BASIC_INT(tokens, t) { return BASIC_Func(tokens, t, "Math.floor"); }
 function BASIC_LOG(tokens, t) { return BASIC_Func(tokens, t, "Math.log"); }
-function BASIC_RND(tokens, t) { return BASIC_Func(tokens, t, "Math.random"); }
+//function BASIC_RND(tokens, t) { return BASIC_Func(tokens, t, "Math.random"); }
 function BASIC_SGN(tokens, t) { return BASIC_Func(tokens, t, "Math.sign"); }
 function BASIC_SIN(tokens, t) { return BASIC_Func(tokens, t, "Math.sin"); }
 function BASIC_SQR(tokens, t) { return BASIC_Func(tokens, t, "Math.sqrt"); }

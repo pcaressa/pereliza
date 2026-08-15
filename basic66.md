@@ -8,9 +8,17 @@
 
 ## Intro
 
-One of the cornerstone of computer science was doubtfully the BASIC programming language, designed and implemented by John Kemeny and Thomas Kurtz in 1964: it was the first language ever conceived to be simple, interactive, addressed to anyone. Within a decade, it became the language of microcomputers, the first language ever learnt from generations of programmer, either for hobbys or profession.
+One of the cornerstone of computer science was doubtfully the BASIC programming language, designed and implemented by John Kemeny and Thomas Kurtz in 1964: it was the first language ever conceived to be simple, interactive, addressed to anyone. Within a decade, it became the language of microcomputers, the first language ever learnt from generations of programmer, either for hobby or for job.
 
-Basic66 is a more or less faithful implementation of Basic as it was between 1966 and 1967: it contains the same facilities of the Basic as described in the 1968 version of the manual (the so called "Basic the 4th"). I wrote it for fun (indeed no AIs were harmed, I coded by hands and brain, so forgive the bugs and bad style) as a html page with a JavaScript embedded ready to run: actually, I needed a retro-envinronment in which to program a version of the classic ELIZA chatbot implemented by Weienbaum in 1966, and I wanted a language of that time (the natural choice would be Lisp).
+Basic66 is a more or less faithful implementation of Basic as it was between 1966 and 1967: it contains the same facilities of the Basic as described in the 1968 version of the manual (the so called "Basic the 4th") with the important exceptions of:
+
+- No matrix statements.
+- No user defined functions.
+- Data inserted interactively is collected one item for line, while in Dartmouth Basic one can have several items on a same line separated by commas.
+
+The system maintains a source program at the time, which can be saved and loaded from the disk via the browser interface (see below), and which the Basic66 compiler compiles to JavaScript, ready to be executed.
+
+I wrote this compiler for fun (indeed no AIs were harmed, I coded by hands and brain, so forgive the bugs and bad style) as a html page with a JavaScript embedded ready to run: actually, I needed a retro-envinronment in which to program a version of the classic ELIZA chatbot implemented by Weienbaum in 1966, and I wanted a language of that time (the natural choice would be Lisp).
 
 Anyway, here it is, hope you'll enjoy it.
 
@@ -20,8 +28,11 @@ To launch Basic66, just open the html file `basic66.html` in your browser. A bla
 
     BASIC66 - A DARTMOUTH BASIC DIALECT
     (C) 2026 BY PAOLO CARESSA
+    TERMINAL ON AT SAT AUG 15 2026
+    READY
     >|
 
+The `>` sign is the user prompt
 Now you can insert commands to edit, save, load or launch a Basic program: they are the classic DTSS terminal commands. A single source file can be dealt with at the time: to create a new one, type
 
     >NEW name
@@ -61,12 +72,11 @@ Numbers and strings are not declared but directly assigned, as in Python. For ex
     10 LET X = 128
     20 LET Y = (X + 1)*(X-1)
     30 LET R = SQR(X^2 + Y^2)
+    99 END
 
-This program defines three variables, assigning to them values. The `^` operator means raising to the power, while `SQR` means "squared root".
+Notice that a program should always end with the `END` instruction which should be the last one (else an error occurs). This program defines three variables, assigning to them values. The `^` operator means raising to the power, while `SQR` means "squared root".
 
-As prescribed by Kemeny and Kurtz, each Basic statement should start with a keyword, so to assign a new value to an already defined variable you cannot use `X = ...` but still `LET X = ...`. However, several variables may be assigned at once:
-
-    10 LET X = X0 = X1 = 128
+As prescribed by Kemeny and Kurtz, each Basic statement should start with a keyword, so to assign a new value to an already defined variable you cannot use `X = ...` but still `LET X = ...`.
 
 All variables are set to zero at start, but their values can be changed by the `LET`, `READ` or `CHANGE` statement. Thus, there's no `UNDEFINED VARIABLE` error, any mentioned numerical variable exists with value zero at start, and any mentioned string variable exists with value the empty string at start.
 
@@ -84,15 +94,17 @@ After dimensioning, one can refer to an element of a vector or matrix by the fun
 
     10 DIM V(10)
     20 FOR I = 1 TO 10
-    30  V(I) = I^2
+    30 LET V(I) = I^2
     40 NEXT I
+    99 END
 
 If you use a non dimensioned vector or matrix, an error occurs, but if you try to assign a value to an element of it, then it is assumed that it is a vector with 10 elements, or a matrix with 10x10 elements. Thus, the previous example could be written in worse style as
 
     10 REM LINE 30 MAKES AN IMPLICIT DIM V(10) DECLARATION
     20 FOR I = 1 TO 10
-    30  V(I) = I^2
+    30 LET V(I) = I^2
     40 NEXT I
+    99 END
 
 Among numbers, the usual arithmetical operations are allowed. Number or string comparisons are allowed only inside `IF` statements, and are the usual ones: `=`means equality, `<>` means inquality, `<`, `<=`, `>`, `>=` have the usual meaning for numbers and strings as all current programming languages.
 
@@ -117,54 +129,39 @@ For example, to concatenate two strings one can do the following:
     90 LET V1(0) = LEN(X$) + LEN (Y$)
     100 CHANGE V1 TO X$
     200 PRINT X$
+    999 END
 
 ### Basic66 statements
 
-The complete list of all Basic66 follows.
+#### Constants, expressions and relations
 
-        CHANGE v TO v$
-        CHANGE v$ TO v
-        DATA n, ...
-        DATA s, ...
-        DIM v(n), ...
-        DIM v(n,n1), ...
-        DIM v$(n), ...
-        FOR v = n TO n1
-        FOR v = n TO n1 STEP n2
-        GOSUB p
-        GOTO p
-        IF n1 rel n2 THEN p
-        IF s1 rel s2 THEN p
-        INPUT v, ...
-        INPUT v$, ...
-        LET v = n
-        LET v(n) = n1
-        LET v(n,n1) = n2
-        LET v$ = s
-        LET v$(n) = s
-        NEXT v
-        PRINT n, ...
-        READ v, ...
-        READ v$, ...
-        REM ...
-        RETURN
-        STOP
-        END
+Constants can be numerical ones, in the usual decimal (possibly with exponential part) format, and strings, enclosed between double quotes (double quotes cannot be quoted inside a string).
 
-     WHERE
-        Variables v are letters possibly followed by letters or digits
-        Numbers n are operands connected via arithmetical operators "+", "-",
-            "*", "/", where an operand is a number constant, a number variable,
-            a function applied to an actual parameter, minus followed by an
-            operand, a number between parentheses.
-        Strings s are string operands, thus string constants, string variables,
-            functions applied to an actual parameter. A string can be subscripted
-            as a vector and a string vector as a matrix. For example S$(1,2)
-            addresses the second character of string S$(1). 
-        A relation can be "=", "<", ">", "<>", ">=", "<="
-    
-    The last statement of the program ought to be END.
+Constants aside, there are the following operands:
 
+- Variables, which are just a variable identifier (a letter, possibly followed by a digit, possibly followed by a dollar sign), followed by one or two comma separated numerical expressions in case of vector or matrix variable.
+- Subexpressions, thus expressions enclosed between parentheses.
+- Function evaluation, thus a built-in function name (such as `SIN` or `CHR$`) followed by an operand (typically a subexpression) with the only exception of `RND` which accepts no parameter and behaves like a variable, although it provides every time a different value, more or less uniformly distributed among 0 and 1.
+- Negations, thus the minus sign followed by a numerical operand.
+
+Available built-in functions are:
+
+- `ABS x` that computes the absolute value of number `x`.
+- `ASC s` that computes ASCII code of the first character of string `x`.
+- `ATN x` that computes the inverse function of the tangent of `x`.
+- `CHR$ x` that computes the one-character string corresponding to ASCII code `x`.
+- `COS x` that computes the cosine of `x`.
+- `EXP x` that computes the exponential of `x`.
+- `INT x` that computes the integer part of `x` (the so called *floor* function).
+- `LEN s` that computes the length of string `s`.
+- `LOG x` that computes the natural logarithm of `x`.
+- `RND` that provides a pseudo-random number.
+- `SGN x` that returns -1, 0 or 1 whether `x < 0`, `x = 0` or `x > 0`.
+- `SIN x` that computes the sine of `x`.
+- `SQR x` that computes the squared root of `x`.
+- `TAN x` that computes the tangent of `x`.
+
+Operands can be connected by binary operators to form expressions, the operators being the usual arithmetical ones: `+ - * / ^`, the latter denoting the raising of its left parameter to the second one.
 
 #### CHANGE
 
@@ -176,13 +173,92 @@ where `v1` and `v2` are a string variable and a vector variable, or a vector var
 
 #### DATA, READ and RESTORE
 
+The compiler reserves a read only memory area to collect a list of constants, which may be number of strings. Such constants are declared by a `DATA` statement which contains a comma separated list of numbers or strings, that are stored in the memory area in the order in which the `DATA` statements appear along the program.
+
+So a `DATA` statement produces no code. Instead, the `READ` statement can be used to read those data, in the order in which they appear. For example, consider
+
+    10 DATA 2, "A", "AB"
+    20 READ X, A$, B$
+    30 DATA "C", "CD", 3
+    40 READ C$, D$
+    50 PRINT A$, B$, C$, D$
+    60 READ Y
+    70 PRINT X + Y
+    90 END
+
+Lines 10 and 30 contains data, that are stored in the memory area as a list `[2, "A", "AB", "C", "CD", 3]`. When the first `READ` statement is executed, line 20, it reads a number and two strings, storing them in the variables `X`, `A$` and `B$` respectively. The subsequent `READ` statement, line 40, expects two strings, indeed it parses `"C", "CD"` from the memory area, storing them respectively into variable `C$` and `D$`. Lastly, at line 60, the last item of the memory area, `3`, is read and assigned to variable `Y`.
+
+On running the program, one has the output
+
+    A              AB             C              CD
+    5
+
+Would we add another READ statement, there would be no more data to parse in the memory area: for example, on adding
+
+    80 READ X
+
+we would get
+
+    A              AB             C              CD
+    5
+    OUT OF DATA IN 80
+
+Notice that a same variable can be read time and again in a `READ` statement, that has the same effect of an assignment where the assigned value is taken from the first unread element of the data memory area.
+
+Of course, the type of a variable and the one of the correponding data read have to match, else a type mismatch error occurs.
+
+One can reset the pointer to the next data item by the `RESTORE`statement, after which a `READ` statement will start parsing the data sequence from the beginning.
+
 #### DIM
 
 #### FOR and NEXT
 
 #### GOTO
 
+The infamous jump instruction of Basic66 is `GOTO` (also spelled as `GO TO`). When executed, it makes the program to continue from the line after it: if this line does not exist an error occurs. Thus a `GOTO` alter the usual order of execution of the program stataments, that is dictated by the increasing order of the line numbers. 
+
 #### GOSUB and RETURN
+
+When a chunk of code is to be used time and again in a program, one can put it into a subroutine, thus a piece of code ending with a `RETURN` instruction. To execute the subroutine, one uses the statement `GOSUB x`, being `x` the line number of the first instruction of the subroutine. This has the effect of a `GOTO x`, with the important difference of remembering the line number of the `GOSUB` instruction. When `RETURN` is executed, it is like a `GOTO` to the instruction immediately following the `GOSUB`.
+
+For example
+
+    10 LET X = 10
+    20 LET Y = 20
+    30 GOSUB 100
+    40 PRINT X
+    50 STOP
+    100 LET X = X + Y
+    110 RETURN
+    999 END
+
+This program is equivalent to 
+
+    10 LET X = 10
+    20 LET Y = 20
+    30 GOTO 100
+    40 PRINT X
+    50 STOP
+    100 LET X = X + Y
+    110 GOTO 40
+    999 END
+
+However, had we used the subroutine more than one time, this equivalence break: indeed
+
+    10 LET X = 10
+    20 LET Y = 20
+    30 GOSUB 100
+    33 GOSUB 100
+    36 GOSUB 100
+    40 PRINT X
+    50 STOP
+    100 LET X = X + Y
+    110 RETURN
+    999 END
+
+cannot easily be substituted by a program containing only `GOTO`s, since the `RETURN` instruction at line 110 jumps each time to a different line, to resume the execution after the subroutine has been executed.
+
+There are no local variables in Basic, so you should pay attention to avoid conflicts between variables used in a subroutine and in the main program. Of course, a subroutine can call other subroutines in turn.
 
 #### IF
 
@@ -194,21 +270,10 @@ where `v1` and `v2` are a string variable and a vector variable, or a vector var
 
 #### END, STOP, REM
 
-Any program should end with the `END` statement on the last line, else the compilation terminates with an error.
+Any program should end with the `END` statement on the last line, else the compilation terminates with an error. The `STOP` instruction is the same as a `GOTO x` being `x` the line number of the `END` instruction. The `REM` statement is ignored, so after `REM` you can insert a comment.
 
-### Basic66 functions
+Comments can also start anywhere by a single quote, which let the rest of the line to be ignored by the compiler.
 
-While Basic provided the possibility to define one-line user defined functions, I found no need for that in Basic66. In any case, built-in functions are provided, just the main ones for general purpose numerical applications: most are not useful for PERELIZA, but still it was simple to add them.
-
-#### Numerical functions
-
-#### String functions
-
-Basic66 implements three functions which were available in Dartmouth Basic after the introduction of strings, and essentially available on any Basic implementation of the 70s and 80s.
-
-- `ASC(s)` compute the ASCII code of the first character of string `s` (if the string is empty, 0 is returned).
-- `CHR$(n)` return the string whose only character is the one with ASCII code `n`.
-- `LEN(s)` return the number of characters of string `s`.
 
 ### Differences from the actual Dartmouth Basic
 
