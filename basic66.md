@@ -213,9 +213,15 @@ One can reset the pointer to the next data item by the `RESTORE`statement, after
 
 #### FOR and NEXT
 
-#### GOTO
+#### GOTO and ON
 
-The infamous jump instruction of Basic66 is `GOTO` (also spelled as `GO TO`). When executed, it makes the program to continue from the line after it: if this line does not exist an error occurs. Thus a `GOTO` alter the usual order of execution of the program stataments, that is dictated by the increasing order of the line numbers. 
+The infamous jump instruction of Basic66 is `GOTO` (also spelled as `GO TO`). When executed, it makes the program to continue from the line after it: if this line does not exist an error occurs. Thus a `GOTO` alter the usual order of execution of the program stataments, that is dictated by the increasing order of the line numbers.
+
+The `ON` statement can be used if one could jump to different lines according to the integer part of the value of an expression:
+
+    ON e GOTO l1, ..., ln
+
+The expression `e` is computed and it should result in a number, which is truncated to an integer `i`: if `i < 1` or `i > n`, then an error is issued, else a `GOTO li` is performed. 
 
 #### GOSUB and RETURN
 
@@ -262,9 +268,44 @@ There are no local variables in Basic, so you should pay attention to avoid conf
 
 #### IF
 
+In Basic66, decisions are taken with the `IF` instruction, whose form is
+
+    IF e1 rel e2 THEN line
+
+where `e1` and `e2` are expressions of the same type (thus, both numerical or both string) and `rel` is one of `< = > >= <> <=` meaning respectively "less, equai, greater, greater or equal, different, less or equal" according to the usual order relation between numbers and the lexicographic order between strings (where single characters are ordered according their ASCII code, e.g. "0" < "A").
+
+When the statement is executed, the expressions are evalued and the relation among them checked: if the relation holds true, then `GOTO line` is executed, else nothing is done and the execution flow proceed to the statement following `IF`.
+
 #### INPUT
 
+The input statements is used to get data interactively from the terminal during the program execution: whenever the instruction
+
+    INPUT v1, ..., vn
+
+is executed, being `v1`, ..., `vn` variables (either numbers or strings, not vector or matrices), the terminal prompt the user for a line of text which is interpreted either as a number or as as string, according to the variable type.
+
+For example:
+
+    10 DIM N$(20), S$(20)
+    20 PRINT "NUMBER OF PEOPLE";
+    30 INPUT L
+    40 FOR I = 1 TO L
+    50 PRINT "NAME AND SURNAME";
+    60 INPUT N$(I), S$(I) 
+    60 NEXT I
+    99 END
+
+Notice that we can get values for array elements.
+
 #### LET
+
+By the `LET` statement, a new value is assigned to a variable, or to an element of a vector or matrix variable: the formats are:
+
+    LET v = e
+    LET v(e1) = e2
+    LET v(e1,e2) = e3
+
+Where subscript appears, they have to be expressions resulting in numbers, whose non integer part is drop to transform them into array indexes. If an index if out of range, then an error occurs, as when the variable is quoted, to retrieve its current value, inside an expression.
 
 #### PRINT
 
@@ -273,7 +314,6 @@ There are no local variables in Basic, so you should pay attention to avoid conf
 Any program should end with the `END` statement on the last line, else the compilation terminates with an error. The `STOP` instruction is the same as a `GOTO x` being `x` the line number of the `END` instruction. The `REM` statement is ignored, so after `REM` you can insert a comment.
 
 Comments can also start anywhere by a single quote, which let the rest of the line to be ignored by the compiler.
-
 
 ### Differences from the actual Dartmouth Basic
 
@@ -317,122 +357,4 @@ During program's execution, the object `rt.vars` contains all variables defined 
 - `name.d1` which is the number of rows of the object (0 for a scalar).
 - `name.d2` which is the number of column of the object (0 for a vector).
 - `name.value` which is an array of (1+d1)*(1+d2) numbers or strings, according to the type of the variable (decided by the last character of `name`).
-
-
-
-
-
-## Eliza In Basic66
-
-When PERELIZA starts, it reads a script and then use it to reply to the user commands. In Basic66, since there's no file facility, the script is contained in a series of `DATA` instructions, that are merged into the program.
-
-The first part of the program reads and parses strings from `DATA` statements that contain the text of the script in its original Lisp form.
-
-A S-expression parser reads the script and use it to fill some arrays used during the transformation process. Therefore, the Lisp-like stuff needed is very limited and easily implemented in Basic, by using numerical arrays.
-
-### The script parser
-
-An ELIZA script has the form of a sequence of S-expressions, where an S-expression can be:
-
-- An atom (identifier in a broad sense: a sequence of non blanks characters not containing parentheses).
-- An open parenthesis "(" followed by zero or more S-expressions and by a closed ")" parenthesis.
-- Nothing else.
-
-The first S-expressions of the script are printed on the screen at the start of the session, so they can be used to contain welcome messages.
-
-When the `START` atom is parsed, subsequent S-expressions are considered to be keyword definitions.
-
-Recall that the general form of a keyword definition is as follows:
-
-    (keyword = alias rank
-        (pattern index rule ...)
-        ...)
-
-where `rank` can be omitted (defaulting to 0), `index` is usually omitted (defaulting to 1) and also the `= alias` part is optional.
-
-Each word read by the parser is stored in the word dictionary, a string vector dimensioned as
-
-    LET W0 = 2^12 - 1
-    DIM W$(W0)
-
-This is actually a hash table. When a word is parsed, a simple hash `H` is computed for it, so to address an element `W$(H)` of the dictionary. If the `W$(H)` is empty, the word is inserted in it, else a collision check is performed and, on collision, `W$(H)` is substituted with `W$(H)` concatenated with a space, concatenated with the new word, and the hash of the latter is `H + I/100` being `I` the index of the word inside the element `W$(I)`. Since collisions should be very few, this should suffice to handle them properly.
-
-When a word is a keyword, its hash is copied into the `K()` matrix, which is a stack where new keywords are added along with pointers to their description. The matrix K() is defined as
-
-    LET K0 = 128
-    DIM K(K0, 3)
-
-where, given a keyword of hash `H`, an item describing it in the `I`-th row of `K` is
-
-- `K(I,0) = H`
-- `K(I,1) =` hash of the alias, or -1 if there's no alias.
-- `K(I,2) =` rank of the word (0 if there's no rank).
-- `K(I,3) =` index of S-expression defining it.
-
-S-expressions are stored in matrix as pairs (head, tail) where both head and tail can be:
-
-- A word.
-- A special character (=, *, /, 0, ...).
-- A pointer to a S-expression.
-- The NIL pointer.
-
-The S() matrix contains such pairs, being defined as
-
-    LET S0 = 4096
-    DIM S(S0, 2)
-
-A pair (head, tail) is stored in an item of index `I` of `S()` as
-
-- `S(I,0) =` a code denoting the type of both head and tail.
-- `S(I,1) =` head.
-- `S(I,2) =` tail.
-
-Codes are of the form `C1 + 16*C2` where `C1` and `C2` refer to the head or tail and are integers between 0 and 15 as follows:
-
-- 0 means NIL
-- 1 means hash of a word in W$()
-- 2 means address of a pair in S()
-- 3 means = 
-- 4 means *
-- 5 means /
-- 6 means 0 
-- 7 means 1
-- 8 means 2
-- 9 means 3
-- 10 means 4
-- 11 means 5
-- 12 means 6
-- 13 means 7
-- 14 means 8
-- 15 means 9
-
-Digits are used to refer to items in a pattern.
-
-For example, the S-expression
-
-    ((0 ME) (WHY YOU SAY 1 YOU))
-
-which, written in the (head tail) notation is
-
-    ((0 ME) (WHY (YOU (SAY (1 YOU)))))
-
-is represented as
-
-    S(I)   = (2+16*2, I+1, I+2)
-    S(I+1) = (6+16*1, 0, H0)
-    S(I+2) = (1+16*2, H1, I+3)
-    S(I+3) = (1+16*2, H2, I+4)
-    S(I+4) = (1+16*2, H3, I+5)
-    S(I+5) = (7+16*1, 0, H2)
-
-where H0, H1, H2, H3 are the hash codes of ME, WHY, YOU, SAY. Notice that, in a more constrained system, one could represent values S(I,0) just as single bytes.
-
-There is a special feature to keep into account when parsing the S-expression associated to a list of pattern/rules: a pattern of the form (=keyword) means a pointer to the list of pattern-rules of that keyword.
-
-### The conversation engine
-
-Once the script has been parsed with no errors, control passes to the conversation engine, which loops through a sequence of question/answer where the question is prompted by ELIZA and the answer given by the user.
-
-The string with the answer is tokenized, thus words are recognized by looking for delimiters, such as spaces, commas etc. With the exception of spaces, delimiters are considered single words, too. In particular, if no keyword is parsed before a dot or comma, the text in the answer is deleted, and the same occurs for the text following such a sign when a keyword is parsed. In this way, the reply of ELIZA will focus only on the sentence containing the chosen keyword.
-
 

@@ -1,0 +1,8 @@
+    10 DIM N$(20), S$(20)
+    20 PRINT "NUMBER OF PEOPLE";
+    30 INPUT L
+    40 FOR I = 1 TO L
+    50 PRINT "NAME AND SURNAME";
+    60 INPUT N$(I), S$(I) 
+    70 NEXT I
+    99 END
