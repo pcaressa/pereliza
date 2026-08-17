@@ -10,15 +10,18 @@
 
 One of the cornerstone of computer science was doubtfully the BASIC programming language, designed and implemented by John Kemeny and Thomas Kurtz in 1964: it was the first language ever conceived to be simple, interactive, addressed to anyone. Within a decade, it became the language of microcomputers, the first language ever learnt from generations of programmer, either for hobby or for job.
 
-Basic66 is a more or less faithful implementation of Basic as it was between 1966 and 1967: it contains the same facilities of the Basic as described in the 1968 version of the manual (the so called "Basic the 4th") with the important exceptions of:
+Basic66 is a more or less faithful implementation of Basic as it was between 1966 and 1967: it contains the same facilities of the Basic as described in the 1968 version of the manual (the so called "Basic the 4th" that you can find here: [https://www.bitsavers.org/pdf/dartmouth/dtss/196801_BASIC_4th_Edition.pdf](https://www.bitsavers.org/pdf/dartmouth/dtss/196801_BASIC_4th_Edition.pdf)) with the important exceptions of:
 
 - No matrix statements.
 - No user defined functions.
-- Data inserted interactively is collected one item for line, while in Dartmouth Basic one can have several items on a same line separated by commas.
+- String constants in DATA instructions should always be enclosed between double quotes.
+- Data INPUTed interactively is collected one item for line, while in Dartmouth Basic one can have several items on a same line separated by commas.
 
-The system maintains a source program at the time, which can be saved and loaded from the disk via the browser interface (see below), and which the Basic66 compiler compiles to JavaScript, ready to be executed.
+The system maintains a single source program, which can be saved and loaded from the disk (see below), and which the Basic66 compiler compiles to some inner JavaScript functions, ready to be executed.
 
 I wrote this compiler for fun (indeed no AIs were harmed, I coded by hands and brain, so forgive the bugs and bad style) as a html page with a JavaScript embedded ready to run: actually, I needed a retro-envinronment in which to program a version of the classic ELIZA chatbot implemented by Weienbaum in 1966, and I wanted a language of that time (the natural choice would be Lisp).
+
+Future improvements, if any, should first of all be the implementation of matrix statements, so to adhere to the 1968 standard. Furthermore, more old languages could be added to the system, for example Lisp 1.5 and Algol-60 (upon implementing a virtual file system, also Fortran IV, Cobol and PL/1).
 
 Anyway, here it is, hope you'll enjoy it.
 
@@ -32,8 +35,30 @@ To launch Basic66, just open the html file `basic66.html` in your browser. A bla
     READY
     >|
 
-The `>` sign is the user prompt
-Now you can insert commands to edit, save, load or launch a Basic program: they are the classic DTSS terminal commands. A single source file can be dealt with at the time: to create a new one, type
+The `>` sign is the user prompt, and the vertical bar denotes the cursor: you can type printable characters and they will be inserted after before the cursor, which is moved one place to the right. On typing, the cursor may vanish: this is because the input line is not wrapped, but you can gesture the page to move leftwards to see the hidden part in the right. In general, Basic instructions can fit into less than 30 characters.
+
+The terminal has a fixed size, which is 24x75 characters, thus 24 lines and 75 columns: upon inserting lines (which is done by pressing ENTER), it the printed text will move upward to make space for more recent lines.
+
+However, when inputing a line, the up and down arrow move up and down the window of text shown in the terminal. Left and right arrows works as expected, as CANC and DEL key should do, as well.
+
+With this line input interface, one can insert commands to edit, save, load or launch a Basic program: they are the classic Time Sharing terminal commands, namely the following ones
+
+- `BYE`, that terminates the session.
+- `EXEC`, that executes the compiled code.
+- `LIST`, that displays the source code.
+- `NEW`, that deletes the current source code and starts a new empty program.
+- `OLD`, that deletes the current source code and loads the new source code from the device.
+- `RUN`, that compiles a Basic program and, if no errors occur, executes it.
+- `SAVE`, that saves the current source code on the device.
+
+Some more commands are special to this implementation:
+
+- `AUTO`, that let to introduce a sequence of line without inserting each time the line number.
+- `BASIC`, that compiles the current source program into an object code: `RUN`is equivalent to `BASIC` followed by `EXEC`.
+- `CODE`, that displays the compiled code, if any.
+- `MERGE`, that loads a source code from the device and merges it with the current source code.
+
+A single program can be dealt with at the time: to create a new one, type
 
     >NEW name
 
@@ -46,6 +71,12 @@ To replace this line with another one, just use the same number:
     >10 PRINT 10
 
 You'll notice that characters are capitalized: we use a system with only capital letters available. To delete a line just type its number and press return.
+
+If you know what you are writing, you can use the command
+
+    AUTO first - step
+
+which will start a loop asking the user for lines to insert, automatically numbering those lines from first on with given steps. If first or step are omitted, then they are assumed to be 10.
 
 After a while, you'll want to see the program ordered according to the line numbers: to do that type `LIST` which will print some twenty lines, then ask for a key to be pressed, and so on, until all the program has been listed. One can also specify the first or the last line to list (or both), with `LIST n1-n2` being `n1` and `n2` the first and last line to list, both being optional (of course, if `n1` is omitted, as in `LIST -200`, then it is assumed that `n1` is the first line, while if `n2` is omitted, as in `LIST 200-`, it is assumed that `n2` is the last line).
 
@@ -133,6 +164,8 @@ For example, to concatenate two strings one can do the following:
 
 ### Basic66 statements
 
+The following is a quite succint description with some sparse examples: a non trivial example of program is PERELIZA.BAS which you find in the repository of this distribution. 
+
 #### Constants, expressions and relations
 
 Constants can be numerical ones, in the usual decimal (possibly with exponential part) format, and strings, enclosed between double quotes (double quotes cannot be quoted inside a string).
@@ -211,7 +244,43 @@ One can reset the pointer to the next data item by the `RESTORE`statement, after
 
 #### DIM
 
+When a vector or a matrix have more than 10 or 100 items, you need to declare them with
+
+    DIM v(d1, d2)
+
+where `d1` and `d2` are numerical constants. This is not an instruction but a declaration, dealt with at compile time.
+
 #### FOR and NEXT
+
+Most loops, indeed just what is needed to implement any primitive recursive function, can be espressed as a definite repetition of a block of instructions, that, perhaps, may contain other similar loops inside it. The Basic statement for this kind of loop is the classical one:
+
+    FOR v = e1 TO e2 STEP e3
+    ...
+    NEXT v
+
+where `e1`, `e2` and `e3` are numerical expressions, that are evalued to get three numbers, the starting value of variable `v`, the maximum (or minimum) value for variable `v` and the increment or decrement. The `STEP e3` part may be omitted, in which case is is assumed that `e3 = 1`.
+
+In the case when `e3 > 0`, the `FOR-NEXT` loop is equivalent to the following instructions (imagine X and Y to be line numbers):
+
+    X   LET v = e1
+    X+1 IF v > e2 THEN X+2
+    X+2 ...
+    Y   LET v = v + e3
+    X+1 GOTO X+1
+    X+2 REM
+
+Thus if the variable is outside the interval `e1 <= v <= e2` then the loop is not executed (if this is true when the loop start, the block ... inside it is never executed), otherwise, the block inside the loop is executed for values `v = e1`, `v = e1 + e3`, `v = e1 + 2*e3`, until a value `e1 + N*e3` exceeding `e2` is attained by the variable `v`.
+
+The case when `e3 < 0` is similar, but in this case the variable `v`is decremented at each loop iteration, until it becames lower than `e2`, thus the loop is equivalent to
+
+    X   LET v = e1
+    X+1 IF v < e2 THEN X+2
+    X+2 ...
+    Y   LET v = v + e3  ' recall that e3 < 0
+    X+1 GOTO X+1
+    X+2 REM
+
+in the case `e3 < 0`.
 
 #### GOTO and ON
 
@@ -309,11 +378,56 @@ Where subscript appears, they have to be expressions resulting in numbers, whose
 
 #### PRINT
 
+To print on the terminal one uses the following statement:
+
+    PRINT ...
+
+The dots denote a sequence of zero or more data among the following:
+
+- a string constant;
+- any Basic expression;
+- a comma;
+- a semicolon;
+
+A Basic expression should be followed by a comma or a semicolon or to be the last item.
+
+If the list has no items at all, a blank line is printed, else the items are printed in the order of appearence, where a comma inserts a tabulation and a semicolon inserts just a space before a number and nothing before a string.
+
+If the list is terminated with a comma or semicolon, subsequent `PRINT` statements will continue from that point in printing. Otherwise, a final newline is issued.
+
+This is an example: the program prints a bell using the sine function.
+
+  10 DIM V(20)
+  15 LET X = -1.57
+  20 FOR I = 1 TO 20
+  30 LET V(I) = 1 + SIN(X)
+  35 LET X = X + 0.314
+  50 NEXT I
+  60 REM PRINT THE HISTOGRAM
+ 210 FOR I = 1 TO 20
+ 220 PRINT I; " ";
+ 230 IF I > 9 THEN 250
+ 240 PRINT " ";              ' PRINT ANOTHER SPACE IF I HAS JUST ONE DIGIT
+ 250 FOR J = 1 TO V(I)*10
+ 260 PRINT "*";
+ 270 NEXT J
+ 280 PRINT
+ 290 NEXT I
+ 999 END
+
 #### END, STOP, REM
 
 Any program should end with the `END` statement on the last line, else the compilation terminates with an error. The `STOP` instruction is the same as a `GOTO x` being `x` the line number of the `END` instruction. The `REM` statement is ignored, so after `REM` you can insert a comment.
 
 Comments can also start anywhere by a single quote, which let the rest of the line to be ignored by the compiler.
+
+#### RANDOMIZE
+
+The pseudo-random number generator provided by Basic66 is the one that Dartmouth Basic (and other languages) used at the time, a flawned linear congruential generator. When the program start, the seed used to generate the series of pseudo-random numbers is set to 1, so that a program using `RND` will behave in a deterministic way at each run, making debug less painful. However, one can use the instruction
+
+    RANDOMIZE
+
+(also `RANDOM` works) to change the seed according to the current time, so in an unpredictable way.
 
 ### Differences from the actual Dartmouth Basic
 
@@ -336,19 +450,17 @@ The source code is arranged in an object `rt.source` whose keys are line numbers
 
     10 LET X = 10
     20 PRINT X
+    99 END
 
-is stored as `{10: "LET X = 10", 20: "PRINT X"}`. The compiler, which can be invoked via the `BASIC` command or via the `RUN` command, compiles the program line-by-line, into an object `rt.code` which has exactly the same keys as the source program but that, instead, has JavaScript asynchronous functions as values, each function containing code that compiles the corresponding source program line.
+is stored as `{10: "LET X = 10", 20: "PRINT X", 99: "END"}`. The compiler, which can be invoked via the `BASIC` command or via the `RUN` command, compiles the program line-by-line, into an object `rt.code` which has exactly the same keys as the source program but that, instead, has JavaScript asynchronous functions as values, each function containing code that compiles the corresponding source program line.
 
 For example, the previous program, when compiled, will result in the following object assigned to `rt.code`:
 
-    {
-    10: (async function anonymous() {
-        if(!rt.vars.X)rt.vars.X={d1:0,d2:0,value:[0]};rt.vars.X.value[0]=10;
-    }),
-    20: (async function anonymous() {
-        let p='';p+=(()=>{if(!rt.vars.X)throw"UNDEFINED VARIABLE @ 20";return rt.vars.X.value[0];})();rt.out.push(p);TTY_Refresh(rt);
-    })
+    10 async function anonymous() { bas.vars.X.value=10; }
+    20 async function anonymous() {
+        let p='';p+=" "+((bas.vars.X.value));TTY_Print(p);TTY_Refresh();
     }
+    99 async function anonymous() {}
 
 When the compiled code is executed, via the `EXEC` command or via the `RUN` command, the ordered list of all program's line numbers (which are the same both for the source and the code) is created into `rt.lines`, and an instruction pointer `rt.ip` is set to 0. Then, the function `rt.code[rt.lines[rt.ip]]()` is executed, the pointer updated to the next instruction (some functions can alter its value for example when a `GOTO` is compiled) and this cycle continues until an error occurs or the `rt.ip` counter exceeds the limits of the `rt.lines` array.
 

@@ -109,13 +109,15 @@ function TTY_Print(s) {
         // and use the code after the if block
         s = line.slice(tty.width);
         tty.nonewline = false;
+        if (s.length == 0) return;
     }
     s = TTY_Explode_Tabs(s);
     while (s.length >= tty.width) {
         tty.out.push(s.slice(0, tty.width));
         s = s.slice(tty.width);
     }
-    if (s.length > 0) tty.out.push(s);
+    // if (s.length > 0) tty.out.push(s);
+    tty.out.push(s);
 }
 
 /// Refresh the terminal by printing tty.height lines from the start-th
@@ -140,8 +142,7 @@ async function TTY_Read() {
         const key = await TTY_Key();
         //console.log(key);
         switch (key) {
-            case 
-             "Enter": TTY_Print(tty.prompt + tty.in); return;
+            case "Enter": TTY_Print(tty.prompt + tty.in); return;
             case "ArrowUp": if (start > 1) -- start; continue;
             case "ArrowDown": if 
              (start < tty.out.length - tty.height) ++ start; continue;
@@ -174,6 +175,7 @@ const CMD_Line_Number = (n) => ("   " + n).slice(-4);
 // CMD_Commands.F(args) is a function which executes a command of the terminal
 // inside the global runtime tty, accepting a string args as possible argument.
 const CMD_Commands = {
+    AUTO: CMD_AUTO,
     BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC, LIST: CMD_LIST,
     MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD, SAVE: CMD_SAVE
 };
@@ -181,6 +183,7 @@ const CMD_Commands = {
 /// Parse and execute a system command from tty.in.
 async function CMD() {
     tty.error = "OK";
+    tty.prompt = ">";
     let text = tty.in.match(/^\s*(\d*)\s*(.*)\s*$/);
     // Here text[0] = tty.in, text[1] = line number, text[3] = rest of line.
     if (!text) return;
@@ -193,7 +196,7 @@ async function CMD() {
         else if (text && text[0]) {
             tty.source[line_number] = text[0];
             tty.saved = false;
-        } else if (tty.source[line_number]) {
+        } else if (tty.source[line_number] !== undefined) {
             delete tty.source[line_number];
             tty.saved = false;
         } else tty.error = "ILLEGAL LINE NUMBER";
@@ -207,11 +210,23 @@ async function CMD() {
     }
 }
 
+//  SOME HOUSEHOLD FUNCTIONS USED BY THE COMMAND IMPLEMENTATIONS.
+
+async function CMD_Confirm(s) {
+    tty.nonewline = true;
+    tty.prompt = "?";
+    TTY_Print(s);
+    TTY_Refresh();
+    tty.prompt = ">";
+    await TTY_Read();
+    return tty.in === "Y" || tty.in === "YES" || tty.in === "OK";
+}
+
 /// Execute each line of a text file as a command: if the line starts
 /// with a line number, it has the same effect as introduced interactively.
 async function CMD_Load_File(file) {
     if (file) {
-        if (!tty.saved && !confirm("OVERWRITE UNSAVED PROGRAM?")) {
+        if (!tty.saved && !await CMD_Confirm("OVERWRITE UNSAVED PROGRAM?")) {
             TTY_Print(`FILE ${file.name} NOT LOADED`);
         } else {
             const text = (await file.text()).split("\n");
@@ -234,19 +249,12 @@ async function CMD_Load_File(file) {
         TTY_Refresh();
 }}
 
-async function CMD_BYE(args) {
-    TTY_Print("GOODBYE");
-    TTY_Print(`*** OFF AT ${new Date().toISOString().toUpperCase()}`);
-    TTY_Refresh();
-    tty.active = false;
-}
-
 /// Parse from args a pair first-last, where both first and last are optional:
-/// if first is omitted then it is 0, if last is omitted then it is tty.lines.length.
+/// if first is omitted then it is 0, same for last.
 async function CMD_Parse_first_last(list, args) {
     tty.lines = Object.keys(list).sort((a,b)=>(parseInt(a) < parseInt(b)));
     let first = 0;
-    let last = tty.lines.length - 1;
+    let last = 0;
     const nls = args.match(/^\s*(\d*)\s*\-\s*(\d*)\s*$/);
     // Here nls[1] = from line, text[2] = to line.
     if (nls && nls[1]) {
@@ -269,17 +277,47 @@ async function CMD_Listing(list, first, last) {
     TTY_Print(` ${tty.name}`);
     TTY_Print(" ");
     let start = tty.out.length;
+    if (last === 0) last = tty.lines.length - 1;
     while (first <= last) {
         // Prints a first chunk of the program on the screen
         for (let counter = 1; counter < tty.height && first <= last; ++counter, ++first)
             TTY_Print(CMD_Line_Number(tty.lines[first]) + " " + list[tty.lines[first]]);
         if (first > last) break;
+        TTY_Print("PRESS A KEY TO CONTINUE")
         TTY_Refresh(start);
-        document.getElementById("terminal").innerHTML += "PRESS A KEY TO CONTINUE";
         await TTY_Key();
         start += tty.height;
     }
     TTY_Refresh(start);
+}
+
+//  COMMAND IMPLEMENTATIONS.
+
+/// AUTO [firstline - step]
+async function CMD_AUTO(args) {
+    const pair = await CMD_Parse_first_last(tty.code, args);
+    let first = pair.first ? pair.first : 10;
+    let step = pair.last ? pair.last : 10;
+    let last_empty = 0;     // two consecutive empty lines break the insertion.
+    while (first <= 9999) {
+        tty.prompt = first + " ";
+        await TTY_Read();
+        TTY_Refresh();
+        if (tty.in === "" && last_empty > 0) break;
+        last_empty = tty.in === "";
+        tty.source[first] = tty.in;
+        first += step;
+    }
+    if (last_empty === 0) tty.error = "NO MORE SPACE FOR LINES";
+    tty.prompt = ">";
+}
+
+async function CMD_BYE(args) {
+    TTY_Print("GOODBYE");
+    TTY_Print(`*** OFF AT ${new Date().toISOString().toUpperCase()}`);
+    tty.in = "";
+    TTY_Refresh();
+    tty.active = false;
 }
 
 async function CMD_CODE(args) {
@@ -325,7 +363,7 @@ async function CMD_MERGE(args) {
 
 async function CMD_NEW(args) {
     if (!args || args === "") tty.error = "FILE NAME MISSING";
-    else if (!tty.saved && !confirm("ERASE CURRENT PROGRAM?")) {
+    else if (!tty.saved && !await CMD_Confirm("ERASE CURRENT PROGRAM?")) {
         tty.error = "COMMAND ABORTED";
     } else {
         tty.name = (args.length > 8 ? args.slice(0, 8) : args) + ".BAS";
@@ -423,6 +461,7 @@ async function CMD_BASIC(args) {
 
 async function CMD_RUN(args) {
     await CMD_BASIC(args);
+    bas.seed = 1;
     if (tty.error === "OK") await CMD_EXEC(args);
 }
 
@@ -645,11 +684,20 @@ function BASIC_Variable_Assign(tokens, t) {
     } else {                        // Array variable
         v += "@";                   // suffix in bas.vars for array variables
         let i = BASIC_Subscript(tokens, t);
-        code = `bas.offset=${i.d1}+${i.d2}*bas.vars["${v}"].d1;if(bas.vars["${v}"].value[bas.offset]===undefined)throw "SUBSCRIPT ERROR";bas.vars["${v}"].value[bas.offset]=`;
+        code = (i.d2 === "0") ? `bas.offset=${i.d1};`
+            : `bas.offset=${i.d1}+${i.d2}*bas.vars["${v}"].d1;`;
+        code += `if(bas.vars["${v}"].value[bas.offset]===undefined)throw "SUBSCRIPT ERROR";bas.vars["${v}"].value[bas.offset]=`;
         if (!bas.vars[v]) BASIC_Variable_Insert(v, init, 10, i.d2 === "0" ? 0 : 10);
         t = i.t;
     }
     return {type: type, code: code, t: t};
+}
+
+/// Runtime code that returns the vsalue of (i,j)-th item of a vector or matrix.
+function BASIC_RT_IJ(v, i, j) {
+    let offset = i + j * bas.vars[v].d1;
+    if(bas.vars[v].value[offset] === "undefined") throw "SUBSCRIPT ERROR";
+    return bas.vars[v].value[offset];
 }
 
 /// Compile the retrieval of the value of a BASIC variable, possibly with indexes:
@@ -672,7 +720,7 @@ function BASIC_Variable_Value(tokens, t) {
         let i = BASIC_Subscript(tokens, t);
         // Compile the code that compute the values of a function at runtime:
         //  it is a JS function returning the value or throwing an exception.
-        code = `(()=>{bas.offset=${i.d1}+${i.d2}*bas.vars["${v}"].d1;if(!bas.vars["${v}"].value[bas.offset])throw"SUBSCRIPT ERROR";return bas.vars["${v}"].value[bas.offset];})()`;
+        code = `BASIC_RT_IJ("${v}",${i.d1},${i.d2})`;
         if (!bas.vars[v]) BASIC_Variable_Insert(v, init, 10, d2 === "0" ? 0 : 10);
         t = i.t;
     }
@@ -906,10 +954,10 @@ function BASIC_IF(tokens) {
 
 function BASIC_INPUT(tokens) {
     let t = 1;
-    let code = "";
+    let code = "let prompt=tty.prompt;tty.prompt='?';";
     for (;;) {
         // Since code will be processed by eval, we wrap the async TTY_Read inside a IIFE.
-        code += `prompt=tty.prompt;tty.prompt="?";tty.in='';tty.cursor=0;await TTY_Read();`
+        code += `tty.in='';tty.cursor=0;await TTY_Read();`
         const v = BASIC_Variable_Assign(tokens, t);
         // Compile the runtime function that parses a text line and parses
         // a value of the given type from it. 
