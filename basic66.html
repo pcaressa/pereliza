@@ -36,6 +36,7 @@ const tty = {
     prompt: ">",    // Prompt when asking for an input text
     saved: true,    // False if the source text had been modified and not saved.
     source: {},     // Current source program: line number keyed table.
+    trace: false,   // True if when executing a code information is printed
     width: 75,      // Horizontal size of the terminal screen.
 };
 
@@ -144,10 +145,15 @@ async function TTY_Read() {
         switch (key) {
             case "Enter": TTY_Print(tty.prompt + tty.in); return;
             case "ArrowUp": if (start > 1) -- start; continue;
-            case "ArrowDown": if 
-             (start < tty.out.length - tty.height) ++ start; continue;
+            case "ArrowDown": if (start < tty.out.length - tty.height) ++ start; continue;
             case "ArrowLeft": if (tty.cursor > 0) --tty.cursor; continue;
             case "ArrowRight": if (tty.cursor < tty.in.length) ++tty.cursor; continue;
+            case "PageUp":
+                if (start > tty.height) start -= tty.height; else start = 1;
+                continue;
+            case "PageDown":
+                if (start < 2*tty.height) start += tty.height;
+                continue;
             case "Backspace":
                 if (tty.cursor > 0) {
                     tty.in = tty.in.slice(0, tty.cursor - 1) + tty.in.slice(tty.cursor);
@@ -175,9 +181,9 @@ const CMD_Line_Number = (n) => ("   " + n).slice(-4);
 // CMD_Commands.F(args) is a function which executes a command of the terminal
 // inside the global runtime tty, accepting a string args as possible argument.
 const CMD_Commands = {
-    AUTO: CMD_AUTO,
-    BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC, LIST: CMD_LIST,
-    MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD, SAVE: CMD_SAVE
+    AUTO: CMD_AUTO, BYE: CMD_BYE, CODE: CMD_CODE, EXEC: CMD_EXEC,
+    LIST: CMD_LIST, MERGE: CMD_MERGE, NEW: CMD_NEW, OLD: CMD_OLD,
+    SAVE: CMD_SAVE, TROFF: CMD_TROFF, TRON: CMD_TRON
 };
 
 /// Parse and execute a system command from tty.in.
@@ -330,15 +336,14 @@ async function CMD_EXEC(args) {
     TTY_Print(` ${tty.name}  ${new Date().toISOString().toUpperCase()}`);
     TTY_Print(" ");
     if (tty.lines.length == 0) return;
-    tty.stack = [];  // Return stack from GOSUBs
     tty.lp = 0;      // Index of line number in tty.lines to execute next.
-    tty.dp = 0;      // Index of next DATA to be READ
     let t0 = new Date();
     try {
         do {
             ++ tty.lp;   // this could be altered by the evaluation below (eg GOTOs) 
                         // so we increase it before executing the code line.
-console.log(`EXEC[${tty.lines[tty.lp - 1]}]`, tty.code[tty.lines[tty.lp - 1]]);
+console.log(`${tty.lines[tty.lp - 1]}: EXEC[${tty.lines[tty.lp - 1]}]`, tty.code[tty.lines[tty.lp - 1]]);
+if (tty.trace) TTY_Print(`${tty.lines[tty.lp - 1]} ${tty.source[tty.lines[tty.lp - 1]]}`)
             await tty.code[tty.lines[tty.lp - 1]]();
         } while (tty.lp < tty.lines.length);
         TTY_Print(" ");
@@ -399,13 +404,16 @@ async function CMD_SAVE(args) {
     tty.saved = true;
 }
 
+async function CMD_TROFF(args) { tty.trace = false; }
+async function CMD_TRON(args) { tty.trace = true; }
+
 //
 //  B A S I C   C O M P I L E R
 //
 
 const bas = {
     data: [],       // All data defined by DATA statements.
-    dp: [],         // Data pointer to a line containing just data.
+    dp: 0,          // Data pointer to a line containing just data.
     offset: 0,      // used to access matrix elements.
     stack: [],      // Stack to keep track of RETURN addresses.
     vars: [],       // Variables at runtime.
@@ -461,8 +469,12 @@ async function CMD_BASIC(args) {
 
 async function CMD_RUN(args) {
     await CMD_BASIC(args);
-    bas.seed = 1;
-    if (tty.error === "OK") await CMD_EXEC(args);
+    if (tty.error === "OK") {
+        bas.dp = 0;
+        bas.seed = 1;
+        bas.stack = [];
+        await CMD_EXEC(args);
+    }
 }
 
 async function CMD_VARS(args) {
@@ -721,7 +733,7 @@ function BASIC_Variable_Value(tokens, t) {
         // Compile the code that compute the values of a function at runtime:
         //  it is a JS function returning the value or throwing an exception.
         code = `BASIC_RT_IJ("${v}",${i.d1},${i.d2})`;
-        if (!bas.vars[v]) BASIC_Variable_Insert(v, init, 10, d2 === "0" ? 0 : 10);
+        if (!bas.vars[v]) BASIC_Variable_Insert(v, init, 10, i.d2 === "0" ? 0 : 10);
         t = i.t;
     }
     return {type: type, t: t, code: code};
@@ -1097,7 +1109,7 @@ function BASIC_RETURN(tokens) {
 
 function BASIC_STOP(tokens) {
     // Compile the code to end the program.
-    tty.code[line] = BASIC_Code("tty.lp=tty.lines.length;tty.error='STOP';");
+    tty.code[tty.lp] = BASIC_Code("tty.lp=tty.lines.length;tty.error='STOP';");
 }
 
 //  FUNCTIONS COMPILING BASIC FUNCTIONS
