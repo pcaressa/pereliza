@@ -141,7 +141,7 @@ async function TTY_Read() {
     for (;;) {
         TTY_Refresh(start);
         const key = await TTY_Key();
-        //console.log(key);
+        // console.log(key);
         switch (key) {
             case "Enter": TTY_Print(tty.prompt + tty.in); return;
             case "ArrowUp": if (start > 1) -- start; continue;
@@ -260,7 +260,7 @@ async function CMD_Load_File(file) {
 async function CMD_Parse_first_last(list, args) {
     tty.lines = Object.keys(list).sort((a,b)=>(parseInt(a) < parseInt(b)));
     let first = 0;
-    let last = 0;
+    let last = tty.lines.length - 1;
     const nls = args.match(/^\s*(\d*)\s*\-\s*(\d*)\s*$/);
     // Here nls[1] = from line, text[2] = to line.
     if (nls && nls[1]) {
@@ -291,7 +291,7 @@ async function CMD_Listing(list, first, last) {
         if (first > last) break;
         TTY_Print("PRESS A KEY TO CONTINUE")
         TTY_Refresh(start);
-        await TTY_Key();
+        if (await TTY_Key() === "Escape") break;
         start += tty.height;
     }
     TTY_Refresh(start);
@@ -1148,7 +1148,7 @@ function BASIC_TAN(tokens, t) { return BASIC_Func(tokens, t, "Math.tan"); }
 function BASIC_ASC(tokens, t) {
     const o = BASIC_Operand(tokens, t);
     if (o.type !== "string") throw "MISMATCHED STRING OPERATION";
-    o.code += `((${o.code}).charCodeAt(0)||0)`;
+    o.code = `((${o.code}).charCodeAt(0)||0)`;
     o.type = "number";
     return o;
 }
