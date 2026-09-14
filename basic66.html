@@ -261,7 +261,7 @@ async function CMD_Parse_first_last(list, args) {
     tty.lines = Object.keys(list).sort((a,b)=>(parseInt(a) < parseInt(b)));
     let first = 0;
     let last = tty.lines.length - 1;
-    const nls = args.match(/^\s*(\d*)\s*\-\s*(\d*)\s*$/);
+    const nls = args.match(/^\s*(\d*)\s*$|^\s*(\d*)\s*\-\s*(\d*)\s*$/);
     // Here nls[1] = from line, text[2] = to line.
     if (nls && nls[1]) {
         const nls1 = parseInt(nls[1]);

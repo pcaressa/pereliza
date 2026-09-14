@@ -19,7 +19,7 @@ The following commands are available:
     DATA "KEY", k$, r, r1, ..., rk, 0
     DATA "RULE", n, p$, t1$, ..., tm$, ""
 
-The `"ALIAS", w1$, w2$` command insert the pair (w1$,w2$) into a list which is scanned each time a word is parsed from the input text: each occurrence of $w1$ is replaced with $w2$. The Basic program maintains an array `A$()` such that `A$(I,0)` contains $w1$ and `A$(I,1)` contains $w2$, which is inspected each time a word is parsed from the input text.
+The `"ALIAS", w1$, w2$` command insert the pair (w1$,w2$) into a list which is scanned each time a word is parsed from the input text: each occurrence of $w1$ is replaced with $w2$. This substitution occur before the text is transformed somehow. The Basic program maintains an array `A$()` such that `A$(I,0)` contains $w1$ and `A$(I,1)` contains $w2$, which is inspected each time a word is parsed from the input text.
 
 The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations associated to a pattern `p$`. For example:
 
@@ -30,7 +30,7 @@ The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations
         "REALLY, MY 3",
         ""
 
-insert a new rule, with number 10, which has as pattern `"0 MY 0"` (zero matches any sequence of words), and possible transformations the four strings that follows the pattern (`""` marks the end of the list). Actually, the Basic program maintains a string matrix `R$()`, dimensioned as `DIM R$(256,16)` in which the rule number is the index of the corresponding row, `R$(I,0)` contains `p$`, while the sixteen remaining elements contains the possible transformations. A vector `R(I)` contains the actual number of transformations associated to rule number `I`.
+insert a new rule, with number 10, which has as pattern `"0 MY 0"` (zero matches any sequence of words), and possible transformations the four strings that follows the pattern (`""` marks the end of the list). Actually, the Basic program maintains a string matrix `R$()`, dimensioned as `DIM R$(256,16)` in which the rule number is the index of the corresponding row, `R$(I,0)` contains `p$`, while the sixteen remaining elements contains the possible transformations.
 
 The "GROUP" command is used to define a group of words:
 
@@ -42,11 +42,11 @@ For example
 
 defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. Again, Basic uses an array of strings `D$()`, whose elements `D$(I,0)` are group names, while elements `D$(I,1)`, ..., `D$(I,16)` contains the words belonging to the group.
 
-Next we have the "KEY" command
+Next we have the "KEYWORD" command
 
-    "KEY", k$, r, r1, ..., rn, 0
+    "KEYWORD", k$, s$, r, r1, ..., rn, 0
 
-in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed.
+in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. If `s$` is not empty, it is substituted for `k$` whenever one of its rules applies. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed. To kep track of keywords there are two arrays, with the same number of rows, each for a single keyword: `K$()` which contains `k$` and `s$` as `K$(I,0) = k$` and `K$(I,1) = s$`; a matrix `K()` such that `K(I,J)` contains the index of the `J`-th rule associated to the keyword. The element `K(I,0)` contains the rank of the keyword.
 
 The "DEFAULT" command is used if no match can be found with the user input text, and it has the form
 
@@ -58,18 +58,23 @@ The "END" command marks the end of the script.
 
 The algorithm to parse a stript should be straightforward: it assumes that the following data are declared:
 
-    DIM A$(32)      ' Array of aliases
+    DIM A$(32, 1)   ' Array of aliases
     LET A0 = 1      ' First free item in A$()
+    LET A9 = 32     ' SIZE OF A$()
     DIM D(16)       ' Array of default rules
     LET D0 = 1      ' First free item in A$()
+    LET D9 = 16     ' SIZE OF D()
     DIM G$(16,16)   ' Array of groups
     LET G0 = 1      ' First free item in G$()
+    LET G9 = 16     ' SIZE OF G$()
     DIM K$(64)      ' Keyword names
     DIM K(64,16)    ' Keyword Rules
-    DIM K0 = 1      ' First free item in K$() and K()
+    LET K0 = 1      ' First free item in K$() and K()
+    LET K9 = 64     ' SIZE OF K()
     DIM R$(256,16)  ' Array of rules
     DIM R(256)      ' Actual column used in each item of R$
     LET R0 = 1      ' First free item in R$()
+    LET R9 = 256    ' SIZE OF R$() AND R()
 
 Then the parsing script algorithm is the following (The script is stored as a list of DATA statement containing the script commands):
 
@@ -94,9 +99,9 @@ Then the parsing script algorithm is the following (The script is stored as a li
 56. Read G$(G0,i)
 57. If G$(G0,i) <> "", then increase i, go to 55.
 58. Go to 1.
-6. If x$ = "KEY", then
+6. If x$ = "KEYWORD", then
 61. If K0 > 64 then error: too many keys.
-62. Read K$(K0)
+62. Read K$(K0,0), K$(K0,1)
 63. Let i = 0
 64. If i > 16, then error: too many rules for a key.
 65. Read K(K0,i)
