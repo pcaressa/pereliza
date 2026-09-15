@@ -10,16 +10,20 @@ In his paper, Weizenbaum describes the structure of a script according to a Lisp
 
 Since Basic66 does not deal with text or data files, the script should be encoded into a series of DATA statements, usually with line numbers >= 9000.
 
-The following commands are available:
+When parsing the script, PERELIZA stores all strings into a huge (actually very small according to the current standards) table of strings: in a more sophisticated implementation, strings would be stored in a hash table, but here the KISS principle won and we use a simple but space consuming representation.
+
+A vector `S$(1024)` is dimensioned and an index `S0` is initialized to 0, denoting the index of the first free element in the table. Since the table is filled by appending strings and no other list operations are needed, this suffices the purposes of the program.
+
+A script is a sequence of DATA statements which must have the following form (each one can be split in several DATA statements since the item of the command are READ sequentially):
 
     DATA "ALIAS", w1$, w2$
-    DATA "DEFAULT", r1, ..., rk, 0
     DATA "END"
     DATA "GROUP", w$, w1$, ..., wm$
     DATA "KEY", k$, r, r1, ..., rk, 0
+    DATA "PRINT", s$
     DATA "RULE", n, p$, t1$, ..., tm$, ""
 
-The `"ALIAS", w1$, w2$` command insert the pair (w1$,w2$) into a list which is scanned each time a word is parsed from the input text: each occurrence of $w1$ is replaced with $w2$. This substitution occur before the text is transformed somehow. The Basic program maintains an array `A$()` such that `A$(I,0)` contains $w1$ and `A$(I,1)` contains $w2$, which is inspected each time a word is parsed from the input text.
+The `"ALIAS", w1$, w2$` command insert the pair `(w1$,w2$)` into a list which is scanned each time a word is parsed from the input text: each occurrence of `w1$` is replaced by `w2`. This substitution occurs before the text is transformed somehow. PERELIZA maintains an array `A(32,1)` such that `A(I,0)` is the index of `w1$` in `R$()` and `A(I,1)` is the index of `w2$` in `R$()`, which is inspected each time a word is parsed from the input text.
 
 The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations associated to a pattern `p$`. For example:
 
@@ -30,7 +34,13 @@ The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations
         "REALLY, MY 3",
         ""
 
-insert a new rule, with number 10, which has as pattern `"0 MY 0"` (zero matches any sequence of words), and possible transformations the four strings that follows the pattern (`""` marks the end of the list). Actually, the Basic program maintains a string matrix `R$()`, dimensioned as `DIM R$(256,16)` in which the rule number is the index of the corresponding row, `R$(I,0)` contains `p$`, while the sixteen remaining elements contains the possible transformations.
+inserts a new rule, with number 10, whose pattern is `"0 MY 0"` (zero matches any sequence of words), and whose possible transformations are given by the four strings following the pattern (`""` marks the end of the list). To keep track of rules, PERELIZA maintains a matrix `R(128,2)`, where `R(I,0)` is the index in `S$()` to the string containing the rule pattern, `R(I,1)` is the index of the first element of a list of strings containing the possible transformations associated to the pattern and `R(I,2)` is the number of items in this list. Thus, the previous rule, could be stored as `R(10,0) = 100`, `R(10,1) = 101`, `R(10,2) = 4`, where
+
+    S$(100) = "0 MY 0"
+    S$(101) = "WHY ARE YOU CONCERNED OVER MY 3"
+    S$(102) = "WHAT ABOUT YOUR OWN 3"
+    S$(103) = "ARE YOU WORRIED ABOUT SOMEONE ELSE'S 3"
+    S$(104) = "REALLY, MY 3"
 
 The "GROUP" command is used to define a group of words:
 
@@ -40,19 +50,23 @@ For example
 
     "GROUP", "/FAMILY", "SON", "DAUGHTER", "MOTHER", "FATHER", ""
 
-defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. Again, Basic uses an array of strings `D$()`, whose elements `D$(I,0)` are group names, while elements `D$(I,1)`, ..., `D$(I,16)` contains the words belonging to the group.
+defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. PERELIZA uses an array `G(16,2)`, whose elements `G(I,0)` are group names, `G(I,1)` contains the first item of the group and `G(I,2)` is the number of items in the group.
 
 Next we have the "KEYWORD" command
 
     "KEYWORD", k$, s$, r, r1, ..., rn, 0
 
-in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. If `s$` is not empty, it is substituted for `k$` whenever one of its rules applies. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed. To kep track of keywords there are two arrays, with the same number of rows, each for a single keyword: `K$()` which contains `k$` and `s$` as `K$(I,0) = k$` and `K$(I,1) = s$`; a matrix `K()` such that `K(I,J)` contains the index of the `J`-th rule associated to the keyword. The element `K(I,0)` contains the rank of the keyword.
+in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. If `s$` is not empty, it is substituted for `k$` whenever one of its rules applies. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed. To keep track of keywords, PERELIZA uses an array `K(128,)` where, `K(I,0)` is the rank of the keyword, `K(I,1)` is the index in `S$()` of the string containing the keyword, `K(I,2)` is 0 if `s$` is empty, else it is its index in `S$()`, `K(I,3)` contains the number n of rules associated to the keyword and `K(I,4)`, ..., `K(I,16)` are the indexes of the rules in table `R()`.
 
 The "DEFAULT" command is used if no match can be found with the user input text, and it has the form
 
     "DEFAULT", r1, ..., rk, 0
 
-where the numbers of rules to apply in the default situation are listed, ended by 0.
+where the numbers of rules to apply in the default situation are listed, ended by 0. The indexes of these rules are stored in the array `D(16)`, where `D(0)` contains the number k of rules and `D(1)`, ..., `D(16)` contains the indexes r1, ..., rk.
+
+The "PRINT" command is used to immediately print a message x$ on the screen:
+
+    "PRINT", x$
 
 The "END" command marks the end of the script.
 
