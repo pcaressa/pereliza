@@ -10,9 +10,9 @@ In his paper, Weizenbaum describes the structure of a script according to a Lisp
 
 Since Basic66 does not deal with text or data files, the script should be encoded into a series of DATA statements, usually with line numbers >= 9000.
 
-When parsing the script, PERELIZA stores all strings into a huge (actually very small according to the current standards) table of strings: in a more sophisticated implementation, strings would be stored in a hash table, but here the KISS principle won and we use a simple but space consuming representation.
+When parsing the script, PERELIZA stores all strings into a huge (actually very small according to the current standards) table of strings: in a more sophisticated implementation, strings would be stored in a hash table (perhaps with quadratic hashing), but here the KISS principle won and we use a simple but space consuming representation. So, a vector `S$(2048)` is dimensioned and an index `S0` is initialized to 0, denoting the index of the first free element in the table. Basic66 is fast enough to let us rely on a brutal linear insertion algorithm: when a new string is parsed, we look for it, by a linear search, in `S$()` and, if we succeed, then its index is retrieve, else it is appended to the end of `S$()` and the index of the new appended element is returned (which is the old `S0`, the latter being increased).
 
-A vector `S$(1024)` is dimensioned and an index `S0` is initialized to 0, denoting the index of the first free element in the table. Since the table is filled by appending strings and no other list operations are needed, this suffices the purposes of the program.
+Furthermore, since it is needed to store lists of strings, there's also a numerical vector `L(512)` whose items contains the indexes of those strings inside `S$()`: since no string processing is actually required but to store immutable string lists, a list in `L()` is stored as a contiguous sequence `L(I)`, `L(I+1)`, `L(I+2)`, `L(I+3)`, ..., `L(I+N)` where `L(I)` is the length `N` of the list, and `L(I+1)`, ..., `L(I+N)` are its elements.
 
 A script is a sequence of DATA statements which must have the following form (each one can be split in several DATA statements since the item of the command are READ sequentially):
 
@@ -23,7 +23,7 @@ A script is a sequence of DATA statements which must have the following form (ea
     DATA "PRINT", s$
     DATA "RULE", n, p$, t1$, ..., tm$, ""
 
-The `"ALIAS", w1$, w2$` command insert the pair `(w1$,w2$)` into a list which is scanned each time a word is parsed from the input text: each occurrence of `w1$` is replaced by `w2`. This substitution occurs before the text is transformed somehow. PERELIZA maintains an array `A(32,1)` such that `A(I,0)` is the index of `w1$` in `R$()` and `A(I,1)` is the index of `w2$` in `R$()`, which is inspected each time a word is parsed from the input text.
+The `"ALIAS", w1$, w2$` command insert the pair `(w1$,w2$)` into a list which is scanned each time a word is parsed from the input text: each occurrence of `w1$` is replaced by `w$2`. This substitution occurs before the text is transformed somehow. PERELIZA maintains an array `A(32,1)` such that `A(I,0)` is the index of `w1$` in `S$()` and `A(I,1)` is the index of `w2$` in `S$()`, which is inspected each time a word is parsed from the input text.
 
 The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations associated to a pattern `p$`. For example:
 
@@ -34,14 +34,14 @@ The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations
         "REALLY, MY 3",
         ""
 
-inserts a new rule, with number 10, whose pattern is `"0 MY 0"` (zero matches any sequence of words), and whose possible transformations are given by the four strings following the pattern (`""` marks the end of the list). To keep track of rules, PERELIZA maintains a matrix `R(128,2)`, where `R(I,0)` is the index in `S$()` to the string containing the rule pattern, `R(I,1)` is the index of the first element of a list of strings containing the possible transformations associated to the pattern and `R(I,2)` is the number of items in this list. Thus, the previous rule, could be stored as `R(10,0) = 100`, `R(10,1) = 101`, `R(10,2) = 4`, where
+inserts a new rule, with number 10, whose pattern is `"0 MY 0"` (zero matches any sequence of words), and whose possible transformations are given by the four strings following the pattern (`""` marks the end of the list). To keep track of rules, PERELIZA maintains a vector `R(64)` whose elements points to list of strings inside `L()`, that contains the pattern as first element and the transforms in the remaining elements. For example, the previous rule is stored as `R(10) = K`, where `L(K) = 5`, `L(K+1) = 100`, `L(K+2) = 101`, `L(K+3) = 102`, `L(K+4) = 103`, `L(K+5) = 104`, where
 
     S$(100) = "0 MY 0"
     S$(101) = "WHY ARE YOU CONCERNED OVER MY 3"
-    S$(102) = "WHAT ABOUT YOUR OWN 3"
     S$(103) = "ARE YOU WORRIED ABOUT SOMEONE ELSE'S 3"
     S$(104) = "REALLY, MY 3"
 
+    S$(102) = "WHAT ABOUT YOUR OWN 3"
 The "GROUP" command is used to define a group of words:
 
     "GROUP", c$, w1$, ..., wn$, ""
@@ -50,19 +50,19 @@ For example
 
     "GROUP", "/FAMILY", "SON", "DAUGHTER", "MOTHER", "FATHER", ""
 
-defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. PERELIZA uses an array `G(16,2)`, whose elements `G(I,0)` are group names, `G(I,1)` contains the first item of the group and `G(I,2)` is the number of items in the group.
+defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. PERELIZA uses a vector `G(16)`, whose elements `G(I)` are indexes to lists in `L()`, whose first element is the group name and the remaining ones the elements of the group.
 
 Next we have the "KEYWORD" command
 
     "KEYWORD", k$, s$, r, r1, ..., rn, 0
 
-in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. If `s$` is not empty, it is substituted for `k$` whenever one of its rules applies. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed. To keep track of keywords, PERELIZA uses an array `K(128,)` where `K(I,0)` is the index in `S$()` of k$, `K(I,1)` is 0 if `s$` is empty, else it is its index in `S$()`, `K(I,2)` is the rank of the keyword, `K(I,3)` contains the number n of rules associated to the keyword and `K(I,4)`, ..., `K(I,16)` are the indexes of the rules in table `R()`.
+in which a keyword `k$` is defined, with rank `r`, and rules (identified by their numbers `r1`, ...) are associated to it. The final 0 ends the list. If `s$` is not empty, it is substituted for `k$` whenever one of its rules applies. Keywords are the words upon which the system pay attention when it tries to parse a sentence: when a keyword is found in a sentence, a match against the pattern of one of its rules is attempted and, if it succeed, the corresponding transformation is performed. To keep track of keywords, PERELIZA uses an array `K(64,16)` where `K(I,0)` is the index in `S$()` of k$, `K(I,1)` is 0 if `s$` is empty, else it is its index in `S$()`, `K(I,2)` is the rank of the keyword, `K(I,3)` contains the number n of rules associated to the keyword and `K(I,4)`, ..., `K(I,16)` are the indexes of the rules in table `R()`.
 
 The "DEFAULT" command is used if no match can be found with the user input text, and it has the form
 
-    "DEFAULT", r1, ..., rk, 0
+    "DEFAULT", s1$, ..., sk$, 0
 
-where the numbers of rules to apply in the default situation are listed, ended by 0. The indexes of these rules are stored in the array `D(16)`, where `D(0)` contains the number k of rules and `D(1)`, ..., `D(16)` contains the indexes r1, ..., rk.
+where a list of possible answers is listed, ended by "". PERELIZA stores in the variable D the index of a list in `L()` containing this set of strings, which are randomly chosen when a default answer is to be printed.
 
 The "PRINT" command is used to immediately print a message x$ on the screen:
 
@@ -70,68 +70,7 @@ The "PRINT" command is used to immediately print a message x$ on the screen:
 
 The "END" command marks the end of the script.
 
-The algorithm to parse a stript should be straightforward: it assumes that the following data are declared:
-
-    DIM A$(32, 1)   ' Array of aliases
-    LET A0 = 1      ' First free item in A$()
-    LET A9 = 32     ' SIZE OF A$()
-    DIM D(16)       ' Array of default rules
-    LET D0 = 1      ' First free item in A$()
-    LET D9 = 16     ' SIZE OF D()
-    DIM G$(16,16)   ' Array of groups
-    LET G0 = 1      ' First free item in G$()
-    LET G9 = 16     ' SIZE OF G$()
-    DIM K$(64)      ' Keyword names
-    DIM K(64,16)    ' Keyword Rules
-    LET K0 = 1      ' First free item in K$() and K()
-    LET K9 = 64     ' SIZE OF K()
-    DIM R$(256,16)  ' Array of rules
-    DIM R(256)      ' Actual column used in each item of R$
-    LET R0 = 1      ' First free item in R$()
-    LET R9 = 256    ' SIZE OF R$() AND R()
-
-Then the parsing script algorithm is the following (The script is stored as a list of DATA statement containing the script commands):
-
-1. Read x$
-2. If x$ = "END", then return.
-3. If x$ = "ALIAS", then:
-31. If A0 > 32, then error: too many aliases
-32. Read A$(A0,0), A$(A0,1)
-33. Let A0 = A0 + 1
-34. Go to 1.
-4. If x$ = "DEFAULT", then
-41. If D0 > 16 then error: too many default rules.
-42. Read D(D0)
-43. If D(D0) <> 0, then increase D0 and go to 41.
-44. Go to 1.
-5. If x$ = "GROUP", then
-51. If G0 > 16, then error: too many groups.
-52. Read G$(G0,0)
-53. If G$(G0,0) does not start by "/" then error: invalid group name
-54. Let i = 1
-55. If i > 16 then error: too many words in a group.
-56. Read G$(G0,i)
-57. If G$(G0,i) <> "", then increase i, go to 55.
-58. Go to 1.
-6. If x$ = "KEYWORD", then
-61. If K0 > 64 then error: too many keys.
-62. Read K$(K0,0), K$(K0,1)
-63. Let i = 0
-64. If i > 16, then error: too many rules for a key.
-65. Read K(K0,i)
-66. If K(K0,i) <> 0, then increase i, go to 64.
-67. Go to 1.
-7. If x$ = "RULE", then
-71. Read i
-72. If i < 0 or i > 256, then error: invalid rule number.
-73. Read R$(i, 0)
-74. Let j = 1.
-75. If j > 16 then error: too many replacement for a pattern.
-76. Read R$(i,j)
-77. If R$(i,j) <> 0, then increase j, go to 75.
-78. Go to 1.
-8. Error: invalid command.
-
+The algorithm to parse a script should be straightforward: it just scans the `DATA` instructions of the program, parse them and transforms the information therein into data inside the vector and matrices described above.
 
 ## Script execution
 
@@ -157,13 +96,39 @@ After this algorithm is executed, if the keystack is empty, then a random output
 
 The pattern matcher splits the string containing the user prompt in words and tries to match this sequence against the pattern according to the following rules:
 
-- The "0" pattern matches with any sequence of words (even empty).
+- The "0" pattern matches with any non empty sequence of words.
 - A word matches  itself.
 - A group matches any word belonging to it.
 
 A "0" symbol in a pattern can be the first one, the last one, or it must be surrounded by words or groups. If a pattern matches a list of words, the result is a list of strings which prepresent the matched words and the strings resulting by matching 0s.
 
-For example consider the pattern "0 IS 0", that matches the string "A DOG IS AN ANIMAL"; the result of the match is the list ("A DOG", "IS", "AN ANIMAL"). If there's no match, the empty list is returned by the matching algorithm, which is as follows, given a pattern p$() and a list w$() of words to match.
+For example consider the pattern "0 IS 0", that matches the string "A DOG IS AN ANIMAL"; the result of the match is the list ("A DOG", "IS", "AN ANIMAL"). If there's no match, the empty list is returned.
+
+To implement such a match, PERELIZA stores in a numerical array `W()` the list of all (index in `S$()` to) words of the input sentence, in `Y()` the list of words of the pattern and uses a matrix `M(16,2)` to store the matched item: `M(I,0)` and `M(I,1)` contain respectively the index in `W()` of the first and of the last word of the matched item.
+
+For example, is the user prompt is "A DOG IS AN ANIMAL", the pattern is "0 IS 0", assuming that
+
+    S$(100) = "A"
+    S$(101) = "DOG"
+    S$(102) = "IS"
+    S$(103) = "AN"
+    S$(104) = "ANIMAL"
+    S$(105) = "0"
+
+then we'll have:
+
+    W(0) = 5, W(1) = 100, W(2) = 101, W(3) = 102, W(4) = 103, W(5) = 104
+    Y(0) = 3, Y(1) = 105, Y(2) = 102, W(3) = 105
+    M(1,0) = 1, M(1,1) = 101    ' "A DOG"
+    M(2,0) = 3, M(2,1) = 3      ' "IS"
+    M(3,0) = 4, M(3,1) = 4      ' "AN ANIMAL"
+
+In the transformation corresponding to a pattern, numbers from 1 on refers to the corresponding items in the `M()` matrix. For example, the transformation "WHAT IS 3" would generate the answer "WHAT IS AN ANIMAL".
+
+
+
+
+ by the matching algorithm, which is as follows, given a pattern p$() and a list w$() of words to match.
 
 1. Set M to be the empty list.
 2. Set i = 1, j = 1.
