@@ -1118,6 +1118,7 @@ function BASIC_STOP(tokens) {
 function BASIC_RT_RND() {
     bas.seed = (bas.rnda * bas.seed) % bas.rndm;
     return bas.seed / bas.rndm;
+    return Math.random();
 }
 
 /// RND accepts no parameters.
