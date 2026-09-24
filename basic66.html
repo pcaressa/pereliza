@@ -152,7 +152,7 @@ async function TTY_Read() {
                 if (start > tty.height) start -= tty.height; else start = 1;
                 continue;
             case "PageDown":
-                if (start < 2*tty.height) start += tty.height;
+                if (start < tty.out.length - 2*tty.height) start += tty.height;
                 continue;
             case "Backspace":
                 if (tty.cursor > 0) {
@@ -198,7 +198,7 @@ async function CMD() {
     // Here text[0] = line after the number, text[1] = command, text[2] = command parameters.
     if (isFinite(line_number)) {      // line number editing
         tty.error = null;    // After line editing no OK not to clutter the screen.
-        if (line_number == 0 || line_number > 9999) tty.error = "ILLEGAL LINE NUMBER";
+        if (line_number == 0 || line_number > 9999) tty.error = `ILLEGAL LINE NUMBER ${line_number}`;
         else if (text && text[0]) {
             tty.source[line_number] = text[0];
             tty.saved = false;
@@ -413,7 +413,7 @@ async function CMD_TRON(args) { tty.trace = true; }
 
 const bas = {
     data: [],       // All data defined by DATA statements.
-    dp: 0,          // Data pointer to a line containing just data.
+    dp: 0,          // Index in data[] of the next item to read.
     offset: 0,      // used to access matrix elements.
     stack: [],      // Stack to keep track of RETURN addresses.
     vars: [],       // Variables at runtime.
@@ -1118,7 +1118,6 @@ function BASIC_STOP(tokens) {
 function BASIC_RT_RND() {
     bas.seed = (bas.rnda * bas.seed) % bas.rndm;
     return bas.seed / bas.rndm;
-    return Math.random();
 }
 
 /// RND accepts no parameters.
