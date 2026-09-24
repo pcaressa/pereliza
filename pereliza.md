@@ -34,23 +34,23 @@ The `"RULE", n, p$, t1$, ..., tm$, ""` rule defines a new set of transformations
         "REALLY, MY 3",
         ""
 
-inserts a new rule, with number 10, whose pattern is `"0 MY 0"` (zero matches any sequence of words), and whose possible transformations are given by the four strings following the pattern (`""` marks the end of the list). To keep track of rules, PERELIZA maintains a vector `R(64)` whose elements points to list of strings inside `L()`, that contains the pattern as first element and the transforms in the remaining elements. For example, the previous rule is stored as `R(10) = K`, where `L(K) = 5`, `L(K+1) = 100`, `L(K+2) = 101`, `L(K+3) = 102`, `L(K+4) = 103`, `L(K+5) = 104`, where
+inserts a new rule, with number 10, whose pattern is `"0 MY 0"` (zero matches any sequence of words), and whose possible transformations are given by the four strings following the pattern (`""` marks the end of the list). To keep track of rules, PERELIZA maintains a vector `R(64)` whose elements points to list of strings inside `L()`, that contains the pattern as first element and the transforms in the remaining elements. The INDEX element of such list is used to address the transformation to choose if the corresponding pattern matches the user input. For example, the previous rule is stored as `R(10) = K`, where `L(K) = 5`, `L(K+1) = 100`, `L(K+2) = 101`, `L(K+3) = 102`, `L(K+4) = 103`, `L(K+5) = 104`, where
 
     S$(100) = "0 MY 0"
     S$(101) = "WHY ARE YOU CONCERNED OVER MY 3"
+    S$(102) = "WHAT ABOUT YOUR OWN 3"
     S$(103) = "ARE YOU WORRIED ABOUT SOMEONE ELSE'S 3"
     S$(104) = "REALLY, MY 3"
 
-    S$(102) = "WHAT ABOUT YOUR OWN 3"
 The "GROUP" command is used to define a group of words:
 
     "GROUP", c$, w1$, ..., wn$, ""
 
 For example
 
-    "GROUP", "/FAMILY", "SON", "DAUGHTER", "MOTHER", "FATHER", ""
+    "GROUP", "'FAMILY", "SON", "DAUGHTER", "MOTHER", "FATHER", ""
 
-defines a group `"/FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. PERELIZA uses a vector `G(16)`, whose elements `G(I)` are indexes to lists in `L()`, whose first element is the group name and the remaining ones the elements of the group.
+defines a group `"'FAMILY"` which, during the pattern matching phase, matches against each of the words listed after it. PERELIZA uses a vector `G(16)`, whose elements `G(I)` are indexes to lists in `L()`, whose first element is the group name and the remaining ones the elements of the group.
 
 Next we have the "KEYWORD" command
 
