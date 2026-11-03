@@ -219,12 +219,12 @@ async function CMD() {
 //  SOME HOUSEHOLD FUNCTIONS USED BY THE COMMAND IMPLEMENTATIONS.
 
 async function CMD_Confirm(s) {
-    tty.nonewline = true;
     tty.prompt = "?";
     TTY_Print(s);
     TTY_Refresh();
-    tty.prompt = ">";
+    tty.nonewline = true;
     await TTY_Read();
+    tty.prompt = ">";
     return tty.in === "Y" || tty.in === "YES" || tty.in === "OK";
 }
 
