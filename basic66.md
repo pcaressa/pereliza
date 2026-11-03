@@ -19,7 +19,7 @@ Basic66 is a more or less faithful implementation of Basic as it was between 196
 
 The system maintains a single source program, which can be saved and loaded from the disk (see below), and which the Basic66 compiler compiles to some inner JavaScript functions, ready to be executed.
 
-I wrote this compiler for fun (indeed no AIs were harmed, I coded by hands and brain, so forgive the bugs and bad style) as a html page with a JavaScript embedded ready to run: actually, I needed a retro-envinronment in which to program a version of the classic ELIZA chatbot implemented by Weienbaum in 1966, and I wanted a language of that time (the natural choice would be Lisp).
+I wrote this compiler for fun (indeed no AIs were harmed, I coded by hands and brain, so forgive the bugs and bad style) as a html page with a JavaScript embedded ready to run: actually, I needed a retro-envinronment in which to program a version of the classic ELIZA chatbot implemented by Weizenbaum in 1966, and I wanted a language of that time (the natural choice would be Lisp).
 
 Future improvements, if any, should first of all be the implementation of matrix statements, so to adhere to the 1968 standard. Furthermore, more old languages could be added to the system, for example Lisp 1.5 and Algol-60 (upon implementing a virtual file system, also Fortran IV, Cobol and PL/1).
 
@@ -35,11 +35,11 @@ To launch Basic66, just open the html file `basic66.html` in your browser. A bla
     READY
     >|
 
-The `>` sign is the user prompt, and the vertical bar denotes the cursor: you can type printable characters and they will be inserted after before the cursor, which is moved one place to the right. On typing, the cursor may vanish: this is because the input line is not wrapped, but you can gesture the page to move leftwards to see the hidden part in the right. In general, Basic instructions can fit into less than 30 characters.
+The `>` sign is the user prompt, and the vertical bar denotes the cursor: you can type printable characters and they will be inserted after before the cursor, which is moved one place to the right. On typing, the cursor may vanish: this is because the input line is not wrapped, but you can gesture the page to move leftwards to see the hidden part in the right. Usually, Basic instructions fit into less than 30 characters.
 
 The terminal has a fixed size, which is 24x75 characters, thus 24 lines and 75 columns: upon inserting lines (which is done by pressing ENTER), it the printed text will move upward to make space for more recent lines.
 
-However, when inputing a line, the up and down arrow move up and down the window of text shown in the terminal. Left and right arrows works as expected, as CANC and DEL key should do, as well.
+However, when inputting a line, the up and down arrow move up and down the window of text shown in the terminal. Left and right arrows works as expected, as CANC and DEL key should do, as well.
 
 With this line input interface, one can insert commands to edit, save, load or launch a Basic program: they are the classic Time Sharing terminal commands, namely the following ones
 
@@ -56,7 +56,9 @@ Some more commands are special to this implementation:
 - `AUTO`, that let to introduce a sequence of line without inserting each time the line number.
 - `BASIC`, that compiles the current source program into an object code: `RUN`is equivalent to `BASIC` followed by `EXEC`.
 - `CODE`, that displays the compiled code, if any.
-- `MERGE`, that loads a source code from the device and merges it with the current source code.
+- `MERGE`, that loads a source code from the device without deleting the current program, but merging it with the loaded source code.
+- `TROFF`, that switch off the printing of instructions when they are executed (a rough debug facility).
+- `TRON`, that switch on the printing of instructions.
 
 A single program can be dealt with at the time: to create a new one, type
 
@@ -318,7 +320,7 @@ This program is equivalent to
     110 GOTO 40
     999 END
 
-However, had we used the subroutine more than one time, this equivalence break: indeed
+However, had we used the subroutine more than one time, this equivalence breaks: indeed
 
     10 LET X = 10
     20 LET Y = 20
@@ -423,7 +425,7 @@ Comments can also start anywhere by a single quote, which let the rest of the li
 
 #### RANDOMIZE
 
-The pseudo-random number generator provided by Basic66 is the one that Dartmouth Basic (and other languages) used at the time, a flawned linear congruential generator. When the program start, the seed used to generate the series of pseudo-random numbers is set to 1, so that a program using `RND` will behave in a deterministic way at each run, making debug less painful. However, one can use the instruction
+The pseudo-random number generator provided by Basic66 is the one that Dartmouth Basic (and other languages) used at the time, a flawed linear congruential generator. When the program start, the seed used to generate the series of pseudo-random numbers is set to 1, so that a program using `RND` will behave in a deterministic way at each run, making debug less painful. However, one can use the instruction
 
     RANDOMIZE
 
@@ -434,9 +436,9 @@ The pseudo-random number generator provided by Basic66 is the one that Dartmouth
 This implementation of Basic was programmed purposely to have a language in which to implement ELIZA, so it is not a strict implementation of Dartmouth Basic. Hereinafter, I list the main differences.
 
 - The `PRINT` and `INPUT` statements were more flexible in Dartmouth Basic, I implemented the bare minimum needed to ELIZA.
-- The `MAT` family of statements, that allowed to deal with vector and matrices in a very simple way, are not implemented in Basic66.
-- The `DEF` statement is not implemented.
-- A string in a `DATA` statement should always enclosed between double quotes in Basic66, while this is not true in Dartmouth Basic, unless the string can be confused with a number or a series of comma separated data.
+- The `MAT` family of statements, that allowed to deal with vector and matrices in a very simple way, are not implemented in Basic66: this is the most striking difference and, if any, a future version should fix it.
+- The `DEF` statement is not implemented, another important feature.
+- A string in a `DATA` statement should always be enclosed between double quotes in Basic66, while this is not true in Dartmouth Basic, unless the string can be confused with a number or a series of comma separated data.
 
 File handling was not available in Dartmouth Basic in 1966 and, a fortiori, it is not in Basic66.
 
@@ -444,17 +446,17 @@ File handling was not available in Dartmouth Basic in 1966 and, a fortiori, it i
 
 Since Basic66 was just addressed at getting an environment in which to program PERELIZA, its design and implementation heavily relied on the KISS principle.
 
-In the first place, the JavaScript program runs on a naked web page where a simple terminal line is simulated. A global object `rt` contains all runtime data needed to run both the terminal RELP and the Basic compiler.
+In the first place, the JavaScript program runs on a naked web page where a simple terminal line is simulated. Global objects `tty` and `bas` contains all runtime data needed to run both the terminal RELP and the Basic compiler.
 
-The source code is arranged in an object `rt.source` whose keys are line numbers and whose values are the texts of lines corresponding to those numbers. Thus, the program
+The source code is arranged in an object `tty.source` whose keys are line numbers and whose values are the texts of lines corresponding to those numbers. Thus, the program
 
     10 LET X = 10
     20 PRINT X
     99 END
 
-is stored as `{10: "LET X = 10", 20: "PRINT X", 99: "END"}`. The compiler, which can be invoked via the `BASIC` command or via the `RUN` command, compiles the program line-by-line, into an object `rt.code` which has exactly the same keys as the source program but that, instead, has JavaScript asynchronous functions as values, each function containing code that compiles the corresponding source program line.
+is stored as `{10: "LET X = 10", 20: "PRINT X", 99: "END"}`. The compiler, which can be invoked via the `BASIC` command or via the `RUN` command, compiles the program line-by-line, into an object `tty.code` which has exactly the same keys as the source program but that, instead, has JavaScript asynchronous functions as values, each function containing code that compiles the corresponding source program line.
 
-For example, the previous program, when compiled, will result in the following object assigned to `rt.code`:
+For example, the previous program, when compiled, will result in the following object assigned to `tty.code`:
 
     10 async function anonymous() { bas.vars.X.value=10; }
     20 async function anonymous() {
@@ -462,11 +464,22 @@ For example, the previous program, when compiled, will result in the following o
     }
     99 async function anonymous() {}
 
-When the compiled code is executed, via the `EXEC` command or via the `RUN` command, the ordered list of all program's line numbers (which are the same both for the source and the code) is created into `rt.lines`, and an instruction pointer `rt.ip` is set to 0. Then, the function `rt.code[rt.lines[rt.ip]]()` is executed, the pointer updated to the next instruction (some functions can alter its value for example when a `GOTO` is compiled) and this cycle continues until an error occurs or the `rt.ip` counter exceeds the limits of the `rt.lines` array.
+When the compiled code is executed, via the `EXEC` command or via the `RUN` command, the ordered list of all program's line numbers (which are the same both for the source and the code) is created into `tty.lines`, and a line pointer `tty.lp` is set to 0. Then, the function `tty.code[tty.lines[tty.lp]]()` is executed, the pointer updated to the next instruction (some functions can alter its value for example when a `GOTO` is compiled) and this cycle continues until an error occurs or the `tty.lp` counter exceeds the limits of the `tty.lines` array.
 
-During program's execution, the object `rt.vars` contains all variables defined by the program: each variable is stored with the key being its name, with the suffix "@" in case of an array, and its value being the variable's value in case of a scalar, or an object with three attributes in case of an array:
+During program's execution, the object `bas.vars` contains all variables defined by the program: each variable is stored with the key being its name, with the suffix "@" in case of an array, and its value being the variable's value in case of a scalar, or an object with three attributes in case of an array:
 
-- `name.d1` which is the number of rows of the object (0 for a scalar).
-- `name.d2` which is the number of column of the object (0 for a vector).
-- `name.value` which is an array of (1+d1)*(1+d2) numbers or strings, according to the type of the variable (decided by the last character of `name`).
+- `bas.vars[name].d1` which is the number of rows of the object (0 for a scalar).
+- `bas.vars[name].d2` which is the number of column of the object (0 for a vector).
+- `bas.vars[name].value` which is an array of (1+d1)*(1+d2) numbers or strings, according to the type of the variable (decided by the last character of `name`).
 
+The `bas` global variable contains stuff associated to the Basic compiler: for example the `bas.data` list of all constants in the `DATA` instructions found in the program, in their order of appearance. The `bas.dp` index points to the next item of `bas.data` to be read.
+
+A `bas.stack` is used to keep track of return addresses (actually line indexes) from subroutines.
+
+The compiler code should be easily understood, it parses by hand lines and a set of functions associated to keyword strings in the `BASIC_Keywords` global translate a Basic line into the corresponding JavaScript code. Translation, due to the features of the Basic language, can be performed line-by-line (this is because only a statement can appear per line).
+
+Some auxiliary functions are used, mainly to translate expressions and assignments: Basic built-in functions are implemented by values of the object `BASIC_Functions`.
+
+Some functions, such as `BASIC_RT_CHANGE$` (and in general having `_RT_` in the middle of the name) are runtime functions, executed during object code execution to perform tasks that would be too complex to be quoted verbatim in the object JavaScript code.
+
+The all compiler is very simple-minded, with no optimisation, even if several could be implemented.
